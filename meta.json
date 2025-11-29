@@ -5,7 +5,8 @@
   "routines": {
     "init_tmux": "run tmux init docs",
     "attach_tmux": "run tmux attach docs",
-    "terminate_tmux": "run tmux terminate docs"
+    "terminate_tmux": "run tmux terminate docs",
+    "symlink_banana": "ln -s /workspaces/system/skills/banana /workspaces/docs/skills/banana"
   },
   "tmux": {
     "sessions": [

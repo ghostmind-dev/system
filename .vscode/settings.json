@@ -1,7 +1,7 @@
 {
   "files.exclude": {
-    "**/dev": true,
-    "**/.devcontainer": true
+    "**/dev": false,
+    "**/.devcontainer": false
   },
   "deno.disablePaths": [],
   "material-icon-theme.folders.associations": {},
@@ -26,5 +26,6 @@
     "titleBar.inactiveBackground": "#42b88399",
     "titleBar.inactiveForeground": "#15202b99"
   },
-  "peacock.remoteColor": "#42b883"
+  "peacock.remoteColor": "#42b883",
+  "deno.enable": true
 }

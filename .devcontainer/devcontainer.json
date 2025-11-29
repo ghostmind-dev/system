@@ -1,5 +1,5 @@
 {
-  "name": "docs",
+  "name": "system",
   "build": {
     "dockerfile": "Dockerfile"
   },
@@ -23,6 +23,6 @@
     "--cap-add=CAP_IPC_LOCK",
     "--cap-add=NET_ADMIN",
     "--network=host",
-    "--name=docs"
+    "--name=system"
   ]
 }

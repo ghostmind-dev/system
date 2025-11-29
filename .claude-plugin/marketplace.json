@@ -1,0 +1,13 @@
+{
+  "name": "ghostmind",
+  "owner": {
+    "name": "ghostmind-dev"
+  },
+  "plugins": [
+    {
+      "name": "system",
+      "source": "./",
+      "description": "Ghostmind system plugin with skills for development workflows and AI image generation"
+    }
+  ]
+}

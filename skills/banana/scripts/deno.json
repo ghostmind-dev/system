@@ -1,0 +1,8 @@
+{
+  "tasks": {
+    "generate": "deno run --allow-all generate-image.ts"
+  },
+  "imports": {
+    "@google/genai": "npm:@google/genai"
+  }
+}
