@@ -6,7 +6,10 @@
     "init_tmux": "run tmux init docs",
     "attach_tmux": "run tmux attach docs",
     "terminate_tmux": "run tmux terminate docs",
-    "symlink_banana": "ln -s /workspaces/system/skills/banana /workspaces/docs/skills/banana"
+    "claude_marketplace_add": "claude plugin marketplace add ./",
+    "claude_marketplace_remove": "claude plugin marketplace remove ghostmind",
+    "claude_plugin_install_utils": "claude plugin install utils@ghostmind",
+    "claude_plugin_install_system": "claude plugin install system@ghostmind"
   },
   "tmux": {
     "sessions": [
