@@ -1,0 +1,17 @@
+{
+  "name": "system",
+  "description": "The Ghostmind development system: secrets (varlock + Vault), app building blocks, deploys and server hardening, databases, and migrating legacy apps",
+  "version": "0.1.0",
+  "author": {
+    "name": "ghostmind-dev"
+  },
+  "repository": "https://github.com/ghostmind-dev/system",
+  "skills": [
+    "./skills/system",
+    "./skills/new-app",
+    "./skills/secrets",
+    "./skills/deploy",
+    "./skills/database",
+    "./skills/migrate"
+  ]
+}

@@ -1,34 +1,43 @@
 {
   "id": "H8eW8uubGfEY",
-  "name": "docs",
+  "name": "system",
   "type": "app",
   "routines": {
-    "init_tmux": "run tmux init docs",
-    "terminate_tmux": "run tmux terminate docs"
+    "init_herdr": "run herdr init system",
+    "attach_herdr": "run herdr attach system",
+    "terminate_herdr": "run herdr terminate system"
   },
-  "tmux": {
-    "sessions": [
+  "herdr": {
+    "workspaces": [
       {
-        "name": "docs",
-        "windows": [
+        "label": "system",
+        "tabs": [
           {
-            "name": "claude",
+            "label": "claude",
+            "prefix": false,
             "layout": "compact",
             "compact": {
               "type": "single",
-              "panes": {
-                "main": "Claude"
-              }
+              "panes": [
+                {
+                  "name": "main",
+                  "description": "run Claude here for system work"
+                }
+              ]
             }
           },
           {
-            "name": "shell",
+            "label": "shell",
+            "prefix": false,
             "layout": "compact",
             "compact": {
               "type": "single",
-              "panes": {
-                "main": "$SHELL"
-              }
+              "panes": [
+                {
+                  "name": "main",
+                  "description": "general-purpose shell for ad-hoc commands"
+                }
+              ]
             }
           }
         ]
