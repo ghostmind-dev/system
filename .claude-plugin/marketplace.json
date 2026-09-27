@@ -6,8 +6,19 @@
   "plugins": [
     {
       "name": "system",
-      "source": "./system",
-      "description": "Ghostmind system plugin with skills for development workflows and AI image generation"
+      "source": "./",
+      "description": "The Ghostmind development system: secrets (varlock + Vault), app building blocks, deploys and server hardening, databases, and migrating legacy apps",
+      "category": "development",
+      "keywords": [
+        "varlock",
+        "vault",
+        "docker",
+        "deploy",
+        "hetzner",
+        "hasura",
+        "scaffolding"
+      ]
     }
-  ]
+  ],
+  "description": "Ghostmind's development system as a single installable Claude Code plugin."
 }
