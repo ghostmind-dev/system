@@ -77,20 +77,21 @@ Values that differ per environment are overridden in committed **`.env.dev`** / 
 
 ```bash
 # .env.prod
-PUBLIC_URL=https://potion.run
+PUBLIC_URL=https://<app>.ghostmind.dev
 STRIPE_SECRET_KEY=vaultSecret("ghostmind/project/potion/ui/prod")
 # container auth in prod: files mounted by compose `secrets:`
 VAULT_ROLE_ID=exec("cat /run/secrets/vault_role_id")
 VAULT_SECRET_ID=exec("cat /run/secrets/vault_secret_id")
 ```
 
-> The AppRole lines are the target design; the portal pilot is the first real run. If varlock's auth order or `exec` behaves differently than documented, fix this section.
+> The AppRole lines are the target design; the first prod deploy (likely format) is the first real run. If varlock's auth order or `exec` behaves differently than documented, fix this section.
 
 Rules:
 - Mark every secret `@sensitive` so varlock redacts it in output and logs.
 - Pin the plugin to an exact version. The standalone binary refuses ranges.
 - Name the environments `dev` and `prod`. A file named `.env.local` is always loaded by varlock, so it must never exist in a project.
-- `.gitignore` carries `.env.*.local` and nothing that hides `.env.schema`, `.env.dev` or `.env.prod`.
+- `.gitignore` carries `.env`, `.env.local` and `.env.*.local`, and nothing that hides `.env.schema`, `.env.dev` or `.env.prod` (template in `new-app` → docker.md). Legacy ones often ignore `.env.prod`; check with `git status` that the pointer files are tracked.
+- Paths are `ghostmind/project/...` (singular) and key names match the schema item exactly (`GOOGLE_OAUTH_CLIENT_ID`, not `GOOGLE_OAUTH_CLIENT`). When the user stores a third-party secret, hand them the exact `vault kv patch` command to paste.
 - Derived values use functions: `DATABASE_URL=concat("postgres://", $PGUSER, ":", $PGPASSWORD, "@", $PGHOST, "/", $DB_NAME)`. Look up anything beyond this in the docs (`https://varlock.dev/reference/functions/`) rather than guessing.
 
 ## Using it
@@ -98,7 +99,9 @@ Rules:
 | Where | How |
 |---|---|
 | Host scripts / routines | `varlock run -- bash scripts/x.sh` |
-| Compose on the host (for `${PORT}` interpolation in the compose file) | `varlock run -- docker compose -f docker/compose.dev.yaml up` |
+| A child that needs the Vault token (dev compose passing it to the container, scripts calling the `vault` CLI) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
+| Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …`, as the `database` skill's `create_db` does |
+| Compose on the host (for `${PORT}` interpolation in the compose file) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |
 | Inside a container | `ENTRYPOINT ["varlock","run","--","/entrypoint.sh"]` (see `new-app`) |
 | GitHub Actions | `dmno-dev/varlock-action@v1`, or `varlock run --` in a step |
 | Next.js / Vite | optional `@varlock/nextjs-integration` / `@varlock/vite-integration` for type-safe `ENV` access; `varlock run` alone is enough |

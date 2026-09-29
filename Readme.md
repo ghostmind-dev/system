@@ -8,6 +8,8 @@ The Ghostmind development system, packaged as one Claude Code plugin at the repo
 - **Deploy**: one GitHub workflow per app. Tailscale SSH to the product's Hetzner host, single-use Vault login, `docker compose`.
 - **Server**: one small, hardened VM per product. No inbound ports, and no usable credential at rest.
 
+Products are **AI-operable by default**: each ships a remote MCP plus a Claude plugin whose skill teaches the app, so the user can operate it through Claude.
+
 New apps replicate **reference apps** (potion's ui, mcp, db, tunnel…) rather than a rigid template. The `run` CLI and `meta.json` are being retired. Only `run herdr` and `run routine` remain live, and the rest print deprecation warnings.
 
 ## Skills
@@ -24,4 +26,5 @@ New apps replicate **reference apps** (potion's ui, mcp, db, tunnel…) rather t
 ## Status
 
 - Done: skills written; `ghostmind/global/*` seeded from the old `kv/GLOBAL` blob; `run` deprecations on `run`'s `dev` branch.
-- Next: the **portal pilot** proves container-side varlock, single-use AppRole logins and debug sessions end to end, and the skills get corrected from what it teaches. AppRole is not enabled in Vault yet.
+- Proven in dev: `playground/format` (mac, ui, mcp, db, tunnel, traefik) was built end to end with these skills; its retrospective is folded in.
+- Next: the first prod deploy proves single-use AppRole logins and debug sessions. AppRole is not enabled in Vault yet.

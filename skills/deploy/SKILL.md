@@ -13,7 +13,7 @@ description: >-
 
 **Where secrets exist:** only in the memory of the running container. They are never on disk, never in `docker inspect`, and never in CI logs. At rest the server holds **no usable credential**: the login is single-use, short-lived, and bound to the host's IP.
 
-> Status: target flow, first built in the portal pilot. Existing projects (potion, tags, users, portal) still deploy the old way: `run vault kv export` writes `.env.*` into `/run/secrets`, compose uses `env_file`, and CI mints a 1h token with `-policy=admin`. That leaks every secret through `docker inspect` and gives CI full Vault admin.
+> Status: target flow, not yet proven: the first prod deploy on it (format is the likely first) validates it. Existing projects (potion, tags, users, portal) still deploy the old way: `run vault kv export` writes `.env.*` into `/run/secrets`, compose uses `env_file`, and CI mints a 1h token with `-policy=admin`. That leaks every secret through `docker inspect` and gives CI full Vault admin.
 
 ## Vault setup (once per project, from the Mac)
 
