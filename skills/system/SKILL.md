@@ -26,22 +26,26 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 3. **Two environments: `dev` and `prod`**, selected by `APP_ENV`. Never name one `local`: varlock always loads a file called `.env.local` whatever the environment, so its pointers would leak into prod.
 4. **Logic lives in `scripts/*.sh`; a routine is a one-liner that calls it.** Plain Bash, readable by anyone, with no `run custom` and no `jsr:@ghostmind/run` imports.
 5. **Hot reload in dev.** `compose.dev.yaml` bind-mounts the app source; the dev server watches it.
-6. **Expose only what must be public.** Internal services stay on Tailscale. A Cloudflare tunnel exists only if an endpoint is public, and Traefik only if several public hostnames share that tunnel.
+6. **AI-operable by default.** A product ships a way for Claude to operate it: a remote **MCP** (the app's actions as tools) and a **Claude plugin** whose skill teaches the app's concepts and traps. Much of the work around an app goes faster through an AI than by hand. When planning a product, ask what the user will want to do with it through Claude; skip the MCP and plugin only when the answer is honestly nothing (a static site, a pure internal worker).
+7. **Expose only what must be public.** Internal services stay on Tailscale. A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
 
 ## Project shape
 
 ```
 <project>/                       one git repo = one product
   meta.json                      transitional: name, routines, herdr workspace
-  CLAUDE.md  Readme.md  .gitignore
+  CLAUDE.md  README.md  .gitignore
   .github/workflows/<app>.yaml   one per deployable app
-  <app>/                         one folder per service (ui, mcp, api, worker, db, tunnel, traefik…)
+  <app>/                         one folder per service (ui, mcp, api, worker, db, tunnel, traefik, mac, cli…)
     .env.schema  .env.dev  .env.prod     committed; pointers only
     app/                         source
     docker/  Dockerfile  entrypoint.sh  compose.dev.yaml  compose.prod.yaml
     scripts/ dev.sh  prod.sh  (+ migrate.sh, create-db.sh…)
     meta.json                    routines + herdr tab for this app
+  plugin/                        the product's Claude plugin: .mcp.json + skills (see new-app → blocks.md)
 ```
+
+**The root holds only `README.md`, `CLAUDE.md`, `meta.json`, `.gitignore`, `.github/` and, when the product ships a Claude plugin, `.claude-plugin/marketplace.json`.** Every app, including non-web ones (a Swift app, a CLI), lives in its own service folder. Nothing app-specific (`package.json`, `src/`, `test/`) stays at the root.
 
 All apps of a project share one compose network (`docker compose -p <project>`), so they reach each other by container name (`<project>-<app>:<port>`).
 
@@ -51,19 +55,23 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 
 | Block | Use when | Reference |
 |---|---|---|
-| Web app + Google login | Most products | `/Volumes/Projects/ghostmind/potion/ui` (Next.js + next-auth Google) |
-| Remote MCP + Google OAuth | Most products, usually alongside the web app | `/Volumes/Projects/ghostmind/potion/mcp` (Express + MCP SDK, `app/src/auth/google.ts`, `oauth-routes.ts`) |
-| Database | The product has state | `/Volumes/Projects/ghostmind/potion/db` (Hasura on the shared RDS) |
+| Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/playground/format/mcp` (Express + MCP SDK; Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) |
+| **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/ghostmind/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`); smaller: `/Volumes/Projects/ghostmind/tags/plugin` |
+| Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/playground/format/ui` (static React + TanStack, Vite) |
+| Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/ghostmind/potion/ui` (Next.js + next-auth Google) |
+| Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/playground/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
+| Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/playground/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
+| Database | The product has state | `/Volumes/Projects/playground/format/db` (Hasura on the shared RDS, varlock-native); older: `potion/db` |
 | Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/ghostmind/potion/worker` |
-| Tunnel | Something must be public | `/Volumes/Projects/ghostmind/potion/tunnel` |
-| Traefik | Several public hostnames behind one tunnel | `/Volumes/Projects/ghostmind/potion/traefik` |
+| Tunnel | Something must be public | `/Volumes/Projects/playground/format/tunnel` (varlock-native); older: `potion/tunnel` |
+| Traefik | Several public hostnames behind one tunnel | `/Volumes/Projects/playground/format/traefik`; older: `potion/traefik` |
 | Secrets via varlock (host-side scripts) | Script/CLI projects, Cloud Run | `/Volumes/Projects/playground/inference/.env.schema` |
 | iOS / Expo | Mobile | `/Volumes/Projects/ghostmind/potion/native` |
 | Raycast extension | Mac launcher tools | `/Volumes/Projects/labo/projects` |
-| Swift macOS app | Native Mac | `/Volumes/Projects/playground/format` |
+| Swift macOS app | Native Mac | `/Volumes/Projects/playground/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Python CLI/package | Tooling | `/Volumes/Projects/labo/theme` |
 
-The reference apps predate varlock: copy their **app code and structure**, and take secrets, compose and deploy from the `secrets` and `new-app` skills instead.
+`format` is the first project built on this system; prefer it where it has the block. The potion references predate varlock: copy their **app code and structure**, and take secrets, compose and deploy from the `secrets` and `new-app` skills instead. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead.
 
 ## Naming
 
@@ -74,9 +82,46 @@ The reference apps predate varlock: copy their **app code and structure**, and t
 | Vault, shared secrets | `ghostmind/global/<provider>`; look it up live (`secrets` skill) | `ghostmind/global/openrouter` |
 | Database | `<project>_<app>_<env>` | `potion_db_prod` |
 | Routines | `dev`, `prod`, then verbs (`migrate`, `create_db`) | |
-| Dev domain / prod domain | `<app>.ghostmind.app` / the product domain | `mcp.ghostmind.app` / `mcp.potion.run` |
+| Public host | `<app>.ghostmind.app` (dev) / `<app>.ghostmind.dev` (prod); see Domains | `format.ghostmind.app` / `format.ghostmind.dev` |
 
-Local ports must be unique across **all** projects so two projects can run at once. Before picking one, check what is taken: `grep -rhoE '^PORT=[0-9]+' /Volumes/Projects/*/*/*/.env.schema /Volumes/Projects/*/*/*/.env.base 2>/dev/null | sort -u`.
+## Domains
+
+Both domains are in the Cloudflare account. **`ghostmind.app` is dev; `ghostmind.dev` is prod.**
+
+- **An app is one host per environment**: `<app>.ghostmind.app` and `<app>.ghostmind.dev`. Most apps never get their own domain. A product that has one (potion.run, tags.city) uses it for prod instead of `ghostmind.dev`.
+- **One level deep only**: `<app>.ghostmind.dev`, never `mcp.<app>.ghostmind.dev`. Cloudflare's free Universal SSL covers one level of subdomain.
+- **The bare `ghostmind.dev` belongs to portal**; apps only take subdomains.
+- **Services are paths on that host, not subdomains.** Traefik routes by path prefix:
+
+  | Path | Service |
+  |---|---|
+  | `/mcp` | the MCP server |
+  | `/.well-known/oauth-*`, `/oauth/*` | the MCP server (it is the OAuth server; see `new-app` → blocks.md) |
+  | `/api` | the API |
+  | everything else | the web UI |
+
+  Each service serves its routes **under its own prefix** (the API at `/api/v1/...`, not `/v1/...` behind a strip-prefix), so URLs it builds for itself (OAuth issuer, redirect URIs, links) are the real public ones. `PUBLIC_URL` is `https://<app>.ghostmind.app` / `https://<app>.ghostmind.dev`.
+
+Projects on separate subdomains (`format-mcp.ghostmind.app`, potion's `mcp.potion.run`) predate this rule; they move to paths when they're next reworked.
+
+## Ports
+
+Every port a project publishes on the host must be unique across **all** projects, so any two can run side by side. That includes secondary ports: the Hasura console (`--console-port`, `--api-port`), debuggers, anything in a compose `ports:`.
+
+- **Traefik publishes no host port.** The tunnel reaches it on the compose network (`http://<project>-traefik:80`).
+- **Pick from the registry below**, and add the new project's row in the same change. Then confirm nothing is listening: `lsof -iTCP -sTCP:LISTEN -nP | grep :<port>`.
+
+| Project | Ports |
+|---|---|
+| format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
+| potion (legacy) | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 · traefik 80 / 8080 |
+| tags (legacy) | city 5001 · mcp 3020 · native 3055 · db 5080 · Hasura console 9697 / 9698 · traefik 80 / 8080 |
+| users (legacy) | db 5080 |
+| portal (legacy) | portal 8089 · traefik 80 / 8080 |
+| noice (legacy) | ui 5001 · traefik 80 / 8080 |
+| vault | 8200 |
+
+Legacy rows collide with each other: renumber them when the project is migrated. For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
 
 ## meta.json and `run` (transitional)
 

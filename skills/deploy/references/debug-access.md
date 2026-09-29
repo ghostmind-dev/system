@@ -2,7 +2,7 @@
 
 Goal: when nobody is debugging, the server holds **no Vault token and no GitHub token**. When you SSH in to debug, you bring short-lived credentials with you. They exist only in that shell's memory and are revoked the moment you exit.
 
-> Status: design, to be built and verified during the portal pilot. Implement it as `scripts/debug.sh` in this skill and replace this note.
+> Status: design, to be built and verified with the first prod deploy. Implement it as `scripts/debug.sh` in this skill and replace this note.
 
 ## Flow (from the Mac)
 
