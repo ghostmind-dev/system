@@ -83,6 +83,15 @@ http:
 
 `dynamic.dev.yaml` is the same with `ghostmind.app`. When the MCP server also serves the API (as format's does), point both routers at the same service.
 
+## Terraform (cloud resources: buckets, service accounts)
+
+No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashicorp/terraform` container through varlock. Reference: `/Volumes/Projects/ghostmind/tags/bucket` (`.env.schema`, `scripts/terraform.sh`, `infra/`).
+
+- **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")`, the `TF_VAR_*` inputs, and `TF_STATE_PREFIX` built with `concat()`.
+- **`scripts/terraform.sh <dev|prod> [args]`** re-executes itself through `varlock run` with `APP_ENV` set (routines have no shell to set it), then runs `docker run --rm -v "$PWD/infra:/infra" -w /infra -e GOOGLE_CREDENTIALS -e TF_VAR_… hashicorp/terraform:1.13`: `init -reconfigure -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`).
+- **Existing state from the `run` era** lives at `<meta.id>/<legacy env>/terraform/<component>` in `$TERRAFORM_BUCKET_NAME`, with `local` as the dev env name. Keep that prefix (`concat("<meta.id>/", $TF_VAR_ENVIRONMENT, "/terraform/core")` with `TF_VAR_ENVIRONMENT=if(forEnv(prod), "prod", "local")`) and `plan` must show no changes before anything else.
+- **Flag resources that write keys to disk** (`local_file` with a service-account key). Prefer putting the key in Vault.
+
 ## Database
 
 See the `database` skill. The app's schema points `DATABASE_URL` (or `HASURA_GRAPHQL_ENDPOINT`) at the project's DB.

@@ -27,4 +27,5 @@ New apps replicate **reference apps** (potion's ui, mcp, db, tunnel…) rather t
 
 - Done: skills written; `ghostmind/global/*` seeded from the old `kv/GLOBAL` blob; `run` deprecations on `run`'s `dev` branch.
 - Proven in dev: `playground/format` (mac, ui, mcp, db, tunnel, traefik) was built end to end with these skills; its retrospective is folded in.
-- Next: the first prod deploy proves single-use AppRole logins and debug sessions. AppRole is not enabled in Vault yet.
+- Proven in prod: `ghostmind/tags`, the first full legacy migration, deploys on single-use AppRole logins (2026-09-30); its retrospective is folded in.
+- Next: build and prove the debug-session command (`deploy` → debug-access.md); migrate potion, users, portal and noice.
