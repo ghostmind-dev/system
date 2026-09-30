@@ -4,7 +4,7 @@ description: >-
   The Ghostmind development system: how every project is built, configured, secured and deployed.
   Load first for any work on a Ghostmind project — creating an app, adding a service (web, remote MCP,
   worker, DB, tunnel), secrets or env vars, Docker/compose, deploys, servers, meta.json, routines,
-  herdr, or the `run` CLI. Routes to the new-app, secrets, deploy, database and migrate skills.
+  herdr, or the `run` CLI. Routes to the new-app, secrets, deploy, database, migrate and comply skills.
 ---
 
 # Ghostmind System
@@ -17,7 +17,7 @@ The system is **three pillars plus reference apps**. There is no framework to le
 | **Deploy** | one GitHub workflow per app → Tailscale SSH → `docker compose` on the host | `deploy` |
 | **Server** | hardened Hetzner host(s), reachable only over Tailscale; one per product today, possibly one big shared prod host later | `deploy` |
 
-Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`.
+Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`.
 
 ## Rules every project follows
 
@@ -28,9 +28,11 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 5. **Hot reload in dev.** `compose.dev.yaml` bind-mounts the app source; the dev server watches it.
 6. **AI-operable by default.** A product ships a way for Claude to operate it: a remote **MCP** (the app's actions as tools) and a **Claude plugin** whose skill teaches the app's concepts and traps. Much of the work around an app goes faster through an AI than by hand. When planning a product, ask what the user will want to do with it through Claude; skip the MCP and plugin only when the answer is honestly nothing (a static site, a pure internal worker).
 7. **Ask before changing shared infrastructure**: a `ghostmind/global/*` key another project reads, a tailnet node's tags, Vault auth methods or policies of another project, the shared RDS. Add alongside rather than rename; remove only what nothing reads.
-8. **Tailscale is for the dev workflow; prod never depends on it.** Tailscale connects the Mac and CI to the servers: SSH, deploys, debugging, reaching a prod DB from the Mac. **Server-to-server calls in prod go over the Hetzner private network (10.0.0.x)**, so prod keeps working when Tailscale is down. A service another server calls binds its port on the host's private address. See `deploy` → server.md.
-   - *Open:* prod containers still reach Vault at start through its tailnet name (`vault.tail0e3587.ts.net`), and AppRole logins are bound to Tailscale IPs. Moving that onto the private network (Vault's private address, roles rebound to the hosts' 10.0.0.x) is pending the user's decision.
-   - *Open:* `ghostmind/global/users#DB_USERS_ENDPOINT` is a tailnet name, so tags, portal and noice still call users over Tailscale in prod. The proposal is to add a private-address key alongside it and switch each consumer's prod value with `if(forEnv(prod), …)`. Shared key: ask first.
+8. **Pick the network by where the two ends run.**
+   - **Between Hetzner servers: the Hetzner private network (10.0.0.x), never Tailscale.** It is free, built in and one less thing to fail. A service another server calls binds its port on the host's private address. On one server, apps use the compose network.
+   - **Across providers** (Hetzner ↔ Google Cloud, the M1 Mac…): Tailscale is allowed for running prod traffic, as a deliberate link. The node is tagged (tagged nodes don't expire), the ACL allows only that path, and the link is monitored. For a managed service with no persistent host (Cloud Run), use public HTTPS with auth instead.
+   - **Dev and deploy** (the Mac, CI, SSH, debugging, a container's one Vault login at startup) use Tailscale.
+   Addresses: `/Volumes/Projects/home/networking.md`.
 9. **Expose only what must be public.** Internal services are reached over the private network (between servers) or the compose network (on one server). A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
 
 ## Project shape
