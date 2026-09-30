@@ -22,12 +22,13 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 ## Rules every project follows
 
 1. **Every process that needs config starts through varlock.** Dev scripts, compose in dev, one-off commands: `varlock run -- <cmd>`. Every container has `varlock run --` as its entrypoint, so in prod only the container talks to Vault. A variable that is not declared in `.env.schema` does not exist.
-2. **Nothing secret lives in the repo or on disk.** `.env.schema`, `.env.dev` and `.env.prod` are committed and hold only defaults and *pointers* (`vaultSecret(...)`). Values live in Vault.
+2. **Nothing secret lives in the repo or on disk.** One `.env.schema` per app is committed and holds only defaults and *pointers* (`vaultSecret(...)`), with `if(forEnv(prod), …)` for what differs per environment. Values live in Vault.
 3. **Two environments: `dev` and `prod`**, selected by `APP_ENV`. Never name one `local`: varlock always loads a file called `.env.local` whatever the environment, so its pointers would leak into prod.
-4. **Logic lives in `scripts/*.sh`; a routine is a one-liner that calls it.** Plain Bash, readable by anyone, with no `run custom` and no `jsr:@ghostmind/run` imports.
+4. **Logic lives in `scripts/*.sh`; a routine is a one-liner that calls it.** Plain Bash, readable by anyone, with no `run custom` and no `jsr:@ghostmind/run` imports. `run routine` has no shell, so `bash -c "cd app && …"` breaks: anything with `cd`, `&&`, pipes or quotes goes in a script.
 5. **Hot reload in dev.** `compose.dev.yaml` bind-mounts the app source; the dev server watches it.
 6. **AI-operable by default.** A product ships a way for Claude to operate it: a remote **MCP** (the app's actions as tools) and a **Claude plugin** whose skill teaches the app's concepts and traps. Much of the work around an app goes faster through an AI than by hand. When planning a product, ask what the user will want to do with it through Claude; skip the MCP and plugin only when the answer is honestly nothing (a static site, a pure internal worker).
-7. **Expose only what must be public.** Internal services stay on Tailscale. A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
+7. **Ask before changing shared infrastructure**: a `ghostmind/global/*` key another project reads, a tailnet node's tags, Vault auth methods or policies of another project, the shared RDS. Add alongside rather than rename; remove only what nothing reads.
+8. **Expose only what must be public.** Internal services stay on Tailscale. A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
 
 ## Project shape
 
@@ -37,7 +38,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
   CLAUDE.md  README.md  .gitignore
   .github/workflows/<app>.yaml   one per deployable app
   <app>/                         one folder per service (ui, mcp, api, worker, db, tunnel, traefik, mac, cli…)
-    .env.schema  .env.dev  .env.prod     committed; pointers only
+    .env.schema                  committed; pointers only, both environments
     app/                         source
     docker/  Dockerfile  entrypoint.sh  compose.dev.yaml  compose.prod.yaml
     scripts/ dev.sh  prod.sh  (+ migrate.sh, create-db.sh…)
@@ -61,8 +62,10 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/ghostmind/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/playground/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/playground/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
-| Database | The product has state | `/Volumes/Projects/playground/format/db` (Hasura on the shared RDS, varlock-native); older: `potion/db` |
+| Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/ghostmind/tags/bucket` (Terraform in a container through varlock) |
+| Database | The product has state | `/Volumes/Projects/playground/format/db` (dev) and `/Volumes/Projects/ghostmind/tags/db` (dev + prod, migrations applied in the container); older: `potion/db` |
 | Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/ghostmind/potion/worker` |
+| **Prod deploy** (workflows, AppRole, cutover) | Every deployed product | `/Volumes/Projects/ghostmind/tags/.github/workflows/` (`_deploy.yaml`, per-app callers, `redeploy-all.yaml`) |
 | Tunnel | Something must be public | `/Volumes/Projects/playground/format/tunnel` (varlock-native); older: `potion/tunnel` |
 | Traefik | Several public hostnames behind one tunnel | `/Volumes/Projects/playground/format/traefik`; older: `potion/traefik` |
 | Secrets via varlock (host-side scripts) | Script/CLI projects, Cloud Run | `/Volumes/Projects/playground/inference/.env.schema` |
@@ -71,7 +74,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Swift macOS app | Native Mac | `/Volumes/Projects/playground/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Python CLI/package | Tooling | `/Volumes/Projects/labo/theme` |
 
-`format` is the first project built on this system; prefer it where it has the block. The potion references predate varlock: copy their **app code and structure**, and take secrets, compose and deploy from the `secrets` and `new-app` skills instead. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead.
+`format` is the first project built on this system and `tags` the first migrated and deployed on it; prefer them where they have the block. The potion references predate varlock: copy their **app code and structure**, and take secrets, compose and deploy from the `secrets` and `new-app` skills instead. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead.
 
 ## Naming
 

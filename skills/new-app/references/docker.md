@@ -2,7 +2,7 @@
 
 One Dockerfile serves both environments. varlock runs **inside** the container and resolves secrets at start, so secrets never pass through compose, `docker inspect` or disk. The examples below are Node; swap in the runtime of the reference app.
 
-> Status: proven in dev by `/Volumes/Projects/playground/format` (every service there follows this file). The prod half (single-use AppRole) is not yet proven. If something here fails in practice, fix this file.
+> Status: proven in dev by format and in dev + prod by `/Volumes/Projects/ghostmind/tags` (2026-09-30). tags' `mcp/docker/` is the closest match to this file. If something here fails in practice, fix this file.
 
 ## docker/Dockerfile
 
@@ -17,15 +17,16 @@ RUN arch=$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64) \
      | tar -xz -C /usr/local/bin ./varlock \
   && varlock install-plugin @varlock/hashicorp-vault-plugin@2.1.1
 
+# node_modules live one level above the source, so the dev bind mount of app/ can't hide them
 WORKDIR /usr/app
-COPY .env.schema .env.dev .env.prod ./
-
-WORKDIR /usr/app/app
+COPY .env.schema ./
 COPY app/package*.json ./
 RUN npm install
+ENV PATH=/usr/app/node_modules/.bin:$PATH
 
-ARG APP_ENV=dev
+WORKDIR /usr/app/app
 COPY app .
+ARG APP_ENV=dev
 RUN if [ "$APP_ENV" = "prod" ]; then npm run build; fi
 
 COPY docker/entrypoint.sh /entrypoint.sh
@@ -74,8 +75,15 @@ services:
       VAULT_TOKEN: ${VAULT_TOKEN}      # dev only: your own token, on your own machine
     volumes:
       - ../app:/usr/app/app            # hot reload
-      - /usr/app/app/node_modules      # keep the image's node_modules
+      - /usr/app/app/node_modules      # empty: hides the Mac's node_modules (the image's are in /usr/app)
+      # - /usr/app/app/.next           # Next.js: hide the host's build cache too
 ```
+
+Node resolves modules by walking up from the source, so the image's `/usr/app/node_modules` serves the bind-mounted code, and the empty anonymous volume hides whatever macOS-built modules sit in `app/`. Don't put the image's modules *in* the anonymous volume (the older pattern): compose reuses anonymous volumes across `up --build`, so new dependencies silently never arrive.
+
+The dev server takes its port from the schema: `"dev": "next dev --port $PORT"`, not a number in `package.json`.
+
+To test a container by hand, run it on the project network (`docker run --network <project>_default …`); on the default bridge it can't reach Vault.
 
 ## docker/compose.prod.yaml
 
@@ -89,6 +97,8 @@ services:
       args: { APP_ENV: prod }
     restart: unless-stopped
     ports: ["127.0.0.1:5001:5001"]      # literal: prod compose never needs varlock on the host
+    # reached from the Mac over the tailnet (a prod Hasura)? bind "${TAILSCALE_IP}:5086:5086" and
+    # export TAILSCALE_IP=$(tailscale ip -4) in prod.sh; never 0.0.0.0
     environment:
       APP_ENV: prod
       VAULT_ADDR: http://vault.tail0e3587.ts.net:8200
@@ -98,7 +108,7 @@ secrets:
   vault_secret_id: { file: /run/ghostmind/<project>/<app>/secret_id }   # single-use, deleted after start
 ```
 
-Prod authenticates with a **single-use AppRole login** that the deploy workflow drops into host RAM. It is mounted into the container as compose secrets (`/run/secrets/*`, never in env). `.env.prod` reads them into `VAULT_ROLE_ID` / `VAULT_SECRET_ID` (see the `secrets` skill). The `deploy` skill covers the whole flow.
+Prod authenticates with a **single-use AppRole login** that the deploy workflow drops into host RAM. It is mounted into the container as compose secrets (`/run/secrets/*`, never in env). The schema reads them into `VAULT_ROLE_ID` / `VAULT_SECRET_ID` with `if(forEnv(prod), exec("cat /run/secrets/…"))` (see the `secrets` skill). The `deploy` skill covers the whole flow.
 
 **varlock must stay PID 1 and supervise the app**, because the login cannot be reused. If the app crashes, it restarts inside the container, and the secrets resolved at start are still in varlock's memory. In prod the entrypoint loops:
 
@@ -125,10 +135,10 @@ docker compose -p <project> -f docker/compose.dev.yaml up --build
 # scripts/prod.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-docker compose -p <project> -f docker/compose.prod.yaml up --build -d
+docker compose -p <project> -f docker/compose.prod.yaml up --build -d --force-recreate
 ```
 
-`-p <project>` puts every app of the project on one network. `dev.sh` is called through `varlock run --include-internal --`, so `${PORT}` and `${VAULT_*}` are set when compose interpolates. **`--include-internal` is required whenever a child needs `VAULT_TOKEN`**: the token is an internal item, and without the flag varlock hands the child an empty one, so the dev container can't reach Vault and scripts calling the `vault` CLI get permission denied. Routines that don't pass the token on (host-only builds, the traefik dev script) can drop the flag. `prod.sh` runs **without** varlock: `compose.prod.yaml` is literal and only the container talks to Vault, so the server and CI never hold app secrets.
+`-p <project>` puts every app of the project on one network. `--force-recreate` matters in prod: without it an unchanged image isn't restarted, and the deploy's "restarted since the deploy began" check fails. The project name also prefixes named volumes (`<project>_tunnel-creds`); when migrating, keep `-p` identical to the legacy project name so volumes carry over. `dev.sh` is called through `varlock run --include-internal --`, so `${PORT}` and `${VAULT_*}` are set when compose interpolates. **`--include-internal` is required whenever a child needs `VAULT_TOKEN`**: the token is an internal item, and without the flag varlock hands the child an empty one, so the dev container can't reach Vault and scripts calling the `vault` CLI get permission denied. Routines that don't pass the token on (host-only builds, the traefik dev script) can drop the flag. `prod.sh` runs **without** varlock: `compose.prod.yaml` is literal and only the container talks to Vault, so the server and CI never hold app secrets.
 
 ## meta.json
 
@@ -158,11 +168,11 @@ docker compose -p <project> -f docker/compose.prod.yaml up --build -d
 node_modules/
 dist/
 .DS_Store
-# varlock: only the committed .env.schema / .env.dev / .env.prod exist.
+# varlock: only the committed .env.schema exists (older apps: also .env.dev / .env.prod).
 # A .env.local must never exist (varlock always loads it, whatever the environment).
 .env
 .env.local
 .env.*.local
 ```
 
-Never ignore `.env.schema`, `.env.dev` or `.env.prod`: they are the committed pointer files. Legacy `.gitignore`s ignore `.env.*` or `.env.prod`, which silently drops them from git; replace those lines.
+Never ignore `.env.schema` (or `.env.dev` / `.env.prod` where an app still has them): they are the committed pointer files. Legacy `.gitignore`s ignore `.env.*` or `.env.prod`, which silently drops them from git; replace those lines.
