@@ -97,8 +97,9 @@ services:
       args: { APP_ENV: prod }
     restart: unless-stopped
     ports: ["127.0.0.1:5001:5001"]      # literal: prod compose never needs varlock on the host
-    # reached from the Mac over the tailnet (a prod Hasura)? bind "${TAILSCALE_IP}:5086:5086" and
-    # export TAILSCALE_IP=$(tailscale ip -4) in prod.sh; never 0.0.0.0
+    # called by another server in prod? bind the private address, never Tailscale:
+    #   - "${PRIVATE_IP:?}:5080:5080"
+    # also reached from the Mac (a prod Hasura)? add "${TAILSCALE_IP:?}:5080:5080". Never 0.0.0.0.
     environment:
       APP_ENV: prod
       VAULT_ADDR: http://vault.tail0e3587.ts.net:8200
@@ -136,6 +137,14 @@ docker compose -p <project> -f docker/compose.dev.yaml up --build
 set -euo pipefail
 cd "$(dirname "$0")/.."
 docker compose -p <project> -f docker/compose.prod.yaml up --build -d --force-recreate
+```
+
+When `compose.prod.yaml` binds the private or Tailscale address, `prod.sh` exports them first (reference: `/Volumes/Projects/ghostmind/users/state/scripts/prod.sh`):
+
+```bash
+export PRIVATE_IP=$(ip -4 -o addr show | awk '$4 ~ /^10\.0\.0\./ {sub(/\/.*/, "", $4); print $4; exit}')
+[ -n "$PRIVATE_IP" ] || { echo "no 10.0.0.x private address on this host" >&2; exit 1; }
+export TAILSCALE_IP=$(tailscale ip -4)        # only if the Mac reaches this port
 ```
 
 `-p <project>` puts every app of the project on one network. `--force-recreate` matters in prod: without it an unchanged image isn't restarted, and the deploy's "restarted since the deploy began" check fails. The project name also prefixes named volumes (`<project>_tunnel-creds`); when migrating, keep `-p` identical to the legacy project name so volumes carry over. `dev.sh` is called through `varlock run --include-internal --`, so `${PORT}` and `${VAULT_*}` are set when compose interpolates. **`--include-internal` is required whenever a child needs `VAULT_TOKEN`**: the token is an internal item, and without the flag varlock hands the child an empty one, so the dev container can't reach Vault and scripts calling the `vault` CLI get permission denied. Routines that don't pass the token on (host-only builds, the traefik dev script) can drop the flag. `prod.sh` runs **without** varlock: `compose.prod.yaml` is literal and only the container talks to Vault, so the server and CI never hold app secrets.

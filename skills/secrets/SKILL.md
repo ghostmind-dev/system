@@ -31,7 +31,7 @@ done
 
 If the key is there, point to it. If it's missing and it is shared by nature (a provider API key, infra credentials), ask the user for the value and add it to global. Otherwise it belongs to the project. This repo is public, so write global paths and key names into skills and docs only when a specific app needs them, never as an inventory.
 
-**Global or project?** It is global when the same value serves several products (an OpenRouter key, the RDS admin login, the Hetzner token). It is project-scoped when it belongs to one app (its OAuth client secret, JWT secret, DB password). A new provider gets its own path: `vault kv put ghostmind/global/<provider> KEY=...`. When adding a key to an existing path, use `vault kv patch`, not `put`, so the other keys survive.
+**Global or project?** It is global when the same value serves several products (an OpenRouter key, the RDS admin login, the Hetzner token). It is project-scoped when it belongs to one app (its OAuth client secret, JWT secret, DB password). **Exception:** a shared service's own secrets live in global when other products call it with them. users' Hasura admin secret is `ghostmind/global/users#DB_USERS_SECRET`, and users' own schema points there too. A new provider gets its own path: `vault kv put ghostmind/global/<provider> KEY=...`. When adding a key to an existing path, use `vault kv patch`, not `put`, so the other keys survive.
 
 The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is what un-migrated projects still read. Leave it alone.
 
