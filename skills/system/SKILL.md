@@ -28,7 +28,10 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 5. **Hot reload in dev.** `compose.dev.yaml` bind-mounts the app source; the dev server watches it.
 6. **AI-operable by default.** A product ships a way for Claude to operate it: a remote **MCP** (the app's actions as tools) and a **Claude plugin** whose skill teaches the app's concepts and traps. Much of the work around an app goes faster through an AI than by hand. When planning a product, ask what the user will want to do with it through Claude; skip the MCP and plugin only when the answer is honestly nothing (a static site, a pure internal worker).
 7. **Ask before changing shared infrastructure**: a `ghostmind/global/*` key another project reads, a tailnet node's tags, Vault auth methods or policies of another project, the shared RDS. Add alongside rather than rename; remove only what nothing reads.
-8. **Expose only what must be public.** Internal services stay on Tailscale. A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
+8. **Tailscale is for the dev workflow; prod never depends on it.** Tailscale connects the Mac and CI to the servers: SSH, deploys, debugging, reaching a prod DB from the Mac. **Server-to-server calls in prod go over the Hetzner private network (10.0.0.x)**, so prod keeps working when Tailscale is down. A service another server calls binds its port on the host's private address. See `deploy` → server.md.
+   - *Open:* prod containers still reach Vault at start through its tailnet name (`vault.tail0e3587.ts.net`), and AppRole logins are bound to Tailscale IPs. Moving that onto the private network (Vault's private address, roles rebound to the hosts' 10.0.0.x) is pending the user's decision.
+   - *Open:* `ghostmind/global/users#DB_USERS_ENDPOINT` is a tailnet name, so tags, portal and noice still call users over Tailscale in prod. The proposal is to add a private-address key alongside it and switch each consumer's prod value with `if(forEnv(prod), …)`. Shared key: ask first.
+9. **Expose only what must be public.** Internal services are reached over the private network (between servers) or the compose network (on one server). A Cloudflare tunnel exists only if an endpoint is public, and Traefik only when one public host carries several services (see Domains).
 
 ## Project shape
 
@@ -119,7 +122,7 @@ Every port a project publishes on the host must be unique across **all** project
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
 | potion (legacy) | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 · traefik 80 / 8080 |
 | tags (legacy) | city 5001 · mcp 3020 · native 3055 · db 5080 · Hasura console 9697 / 9698 · traefik 80 / 8080 |
-| users (legacy) | db 5080 |
+| users | db 5080 (prod: consumers hardcode it) / 5090 (dev) · Hasura console 9727 / 9728 |
 | portal (legacy) | portal 8089 · traefik 80 / 8080 |
 | noice (legacy) | ui 5001 · traefik 80 / 8080 |
 | vault | 8200 |
@@ -142,4 +145,6 @@ A new meta.json carries only `id` (12-char random), `name`, `type` (`project` at
 - No devcontainers: everything runs on the Mac host (projects under `/Volumes/Projects`). Compose paths are **relative to the compose file**; `SRC`/`LOCALHOST_SRC` are legacy.
 - `VAULT_ADDR` and `VAULT_TOKEN` are exported in the shell. There is no `~/.vault-token`, so schemas pass the token explicitly.
 - Tools on the host: `varlock` (brew `dmno-dev/tap/varlock`), `vault`, `docker`, `gh`, `tailscale`, `herdr`.
-- GitHub org: `ghostmind-dev`. Hosts on Tailscale: see `/Volumes/Projects/home/networking.md`.
+- GitHub orgs: product repos live in **`ghostmind-app`** (older remotes still say `ghostmind-dev` and redirect); system tooling (this plugin, `run`, `play`) is in `ghostmind-dev`. Hosts, Tailscale and private addresses: `/Volumes/Projects/home/networking.md`.
+- The Tailscale CLI isn't on the Mac's PATH: `/Applications/Tailscale.app/Contents/MacOS/Tailscale`.
+- The Mac's shell is zsh: `for path in …` overwrites `$PATH`; an unquoted glob like `--include=*.ts` fails with "no matches found"; `timeout` doesn't exist. Put loops and anything glob-heavy in a `bash` script.

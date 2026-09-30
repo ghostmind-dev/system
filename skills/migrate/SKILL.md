@@ -10,7 +10,7 @@ description: >-
 
 Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define the target. The full reference conversion is `/Volumes/Projects/ghostmind/tags` (seven apps, Terraform and iOS included; dev and prod green on 2026-09-30).
 
-Keep the old files and the old deploy working until the new setup is proven. Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
+Keep the old files and the old deploy working until the new setup is proven. References: `tags` (a multi-app product) and `/Volumes/Projects/ghostmind/users` (a single-app shared service that other products call). Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
 
 ## Steps
 
@@ -20,7 +20,7 @@ Keep the old files and the old deploy working until the new setup is proven. Ask
    - in another project's legacy blobs → shared across products: **promote to global**, except security boundaries (Hasura admin/JWT secrets, `NEXTAUTH_SECRET`). Those stay project-scoped and are flagged for rotation when they're copy-pasted between products;
    - in several apps of this project → one project path, not duplicates;
    - in local `.env.*` files → those files are safe to delete;
-   - flagged `${` → the legacy value interpolates. Resolve it first (`PROJECT` = the root meta name, `APP` = the app meta name, `ENVIRONMENT` = `local`/`prod`); `DB_NAME=${PROJECT}-${APP}-${ENVIRONMENT}` looks shared until resolved.
+   - flagged `${` → the legacy value interpolates. Resolve it first (`PROJECT` = the root meta name, `APP` = the app meta name, `ENVIRONMENT` = `local`/`prod`); `DB_NAME=${PROJECT}-${APP}-${ENVIRONMENT}` looks shared until resolved. **Check that resolved resource names really exist** before writing them into the schema (for databases: `psql -tAc "SELECT datname FROM pg_database"` from a throwaway `postgres:17-alpine` container).
 3. **Write values into Vault** without printing them: pipe straight from one command to the other. Normalize the way compose `env_file` did: trim whitespace, **then** strip one pair of matching quotes (`APPLE_ID="x"   ` otherwise lands in Vault with its quotes). Re-check by hash afterwards. Leave `kv/` untouched.
 4. **Keep legacy names baked into real resources.** Databases (`tags-db-local`), buckets (`tags-local-bucket`) and Terraform state (`<meta.id>/local/terraform/…`) keep their `local` names. Map them in the schema (`if(forEnv(prod), "prod", "local")`) rather than moving data.
 5. **Write the schema** (one `.env.schema` per app, `secrets` skill). `varlock load --agent` resolves with `APP_ENV=dev`, and again with `APP_ENV=prod VAULT_ROLE_ID= VAULT_SECRET_ID=`. *Done when both resolve with no errors.*
@@ -36,7 +36,7 @@ Keep the old files and the old deploy working until the new setup is proven. Ask
    - app code sitting at the repo root moves into its own service folder.
 7. **Delete legacy files carefully.** `.env.local` goes immediately (varlock always loads that name). A legacy `.env.prod` shares its name with a file varlock would read: confirm its values are in Vault by hash, then delete it. Then `.env.base` and `.env.template`. *Done when `git status` shows only `.env.schema` as the committed env file, and nothing app-specific is left at the root.*
 8. **Prove dev**: hot reload works and the app behaves exactly as before.
-9. **Switch the deploy** with the `deploy` skill: its *Validate before merging* checks, then *Moving a legacy project onto this flow* (survey, deploy key, `redeploy-all` cutover, credential cleanup). *Done when every app is green on the new workflows and the server holds no standing credential.*
+9. **Switch the deploy** with the `deploy` skill: its *Validate before merging* checks, then *Moving a legacy project onto this flow*. That covers the one-time authorization, the redacted survey, **the consumers of every published port** (a shared service's callers break silently), the deploy key, the cutover order (single-app: merging is the cutover) and credential cleanup. *Done when every app is green on the new workflows and the server holds no standing credential.*
 10. **Remove the meta.json keys** `compose`, `secrets` and `custom`.
 
 ## Traps seen in practice

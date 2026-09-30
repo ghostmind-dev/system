@@ -42,6 +42,7 @@ For read-only exploration of any DB, use the `toolkits:postgres` skill.
 
 ## Hasura
 
+- **An `unhealthy` Hasura container that nobody noticed** (the image's healthcheck hardcodes 8080) is a sign the legacy setup was never monitored: fix the healthcheck, and check what else was never watched.
 - **Pin the engine version that is already running.** For a migrated project, check first (`docker exec <c> graphql-engine version`, or the image digest): tags' prod ran `latest` = v2.49.4, and pinning an older tag would have downgraded the metadata catalog.
 - Container `<project>-db` from `hasura/graphql-engine:<version>.cli-migrations-v3` (the variant that bundles `hasura-cli`), with the **glibc** varlock build installed (the image is Ubuntu; see `new-app` → docker.md). Override the healthcheck to the real port, as in potion's compose, because the image's built-in check hardcodes 8080.
 - `HASURA_GRAPHQL_ADMIN_SECRET` and `HASURA_GRAPHQL_JWT_SECRET` live in `ghostmind/project/<project>/auth`. The JWT secret is shared with the web app and the MCP.
