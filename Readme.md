@@ -22,6 +22,7 @@ New apps replicate **reference apps** (potion's ui, mcp, db, tunnel…) rather t
 | `deploy` | Workflows, AppRole logins, server hardening, debug sessions |
 | `database` | DB and role on the shared RDS, Hasura, migrations |
 | `migrate` | Moving a legacy app (`.env.base`, `run vault`, `run custom`) onto the new setup |
+| `comply` | Auditing a project against the current rules (`scripts/check.sh`) and fixing drift |
 
 ## Status
 
