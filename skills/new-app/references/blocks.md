@@ -39,49 +39,13 @@ When users pay for their own AI: the user connects their key through OpenRouter'
 
 ## Tunnel (only if something is public)
 
-Reference: `/Volumes/Projects/playground/format/tunnel` (Alpine + varlock); older: `potion/tunnel`. A cloudflared container with `config/ingress.dev.yaml` and `config/ingress.prod.yaml`, which map hostnames → `http://<project>-<target>:<port>` on the compose network. The entrypoint creates the tunnel if missing and routes DNS for each hostname.
+A cloudflared app per project sends each hostname **straight to its app's Service**: no Traefik. The pattern, manifests and credentials are in [kubernetes.md](kubernetes.md) → Tunnel. References: `/Volumes/Projects/ghostmind/portal/tunnel` (prod + dev on Kubernetes) and `/Volumes/Projects/ghostmind/tags/tunnel`.
 
-- **Credentials:** the account `cert.pem` (base64) is `CLOUDFLARED_CREDS` at `ghostmind/global/cloudflare`: `CLOUDFLARED_CREDS=vaultSecret("ghostmind/global/cloudflare")`. The `CLOUDFLARED_TUNNEL_TOKEN` in the same path is an API token, which the entrypoint does not use.
-- The ingress maps each **host** to Traefik, and Traefik splits it by path (see the `system` skill, Domains):
+- **Prod** runs the tunnel from its own credentials JSON (`ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`): no account certificate, no DNS rights.
+- **Dev** uses the `ghostmind.app` account certificate (`ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`) to create the dev tunnel and route DNS.
+- **Several services on one host** (`/mcp`, `/api`, the UI): `path:` rules in the ingress file, most specific first.
 
-```yaml
-# tunnel/config/ingress.prod.yaml
-tunnel: <app>-prod
-ingress:
-  - hostname: <app>.ghostmind.dev
-    service: http://<project>-traefik:80
-  - service: http_status:404
-```
-
-- An app with a single service and nothing else on its host may point the ingress straight at that container and skip Traefik.
-
-## Traefik (whenever one host carries several services)
-
-Reference: `/Volumes/Projects/playground/format/traefik`; older: `potion/traefik`. **It publishes no host port** (no `80:80`, no `8080:8080`), so every project's Traefik can run at once; the tunnel reaches it on the compose network. File provider, `config/dynamic.<env>.yaml`: one host, one router per path prefix. Traefik picks the most specific rule first (longer rules win), so the UI catch-all goes last naturally:
-
-```yaml
-# traefik/config/dynamic.prod.yaml
-http:
-  routers:
-    mcp:
-      rule: "Host(`<app>.ghostmind.dev`) && (PathPrefix(`/mcp`) || PathPrefix(`/oauth`) || PathPrefix(`/.well-known/oauth-`))"
-      service: mcp
-      entryPoints: [web]
-    api:
-      rule: "Host(`<app>.ghostmind.dev`) && PathPrefix(`/api`)"
-      service: api
-      entryPoints: [web]
-    ui:
-      rule: "Host(`<app>.ghostmind.dev`)"
-      service: ui
-      entryPoints: [web]
-  services:
-    mcp: { loadBalancer: { servers: [ { url: "http://<project>-mcp:<port>" } ] } }
-    api: { loadBalancer: { servers: [ { url: "http://<project>-api:<port>" } ] } }
-    ui:  { loadBalancer: { servers: [ { url: "http://<project>-ui:<port>" } ] } }
-```
-
-`dynamic.dev.yaml` is the same with `ghostmind.app`. When the MCP server also serves the API (as format's does), point both routers at the same service.
+Traefik is no longer part of the pattern. Projects that still have a `traefik/` app (format, potion, noice) drop it when they move to Kubernetes.
 
 ## Terraform (cloud resources: buckets, service accounts)
 

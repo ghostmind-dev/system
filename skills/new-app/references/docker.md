@@ -1,8 +1,10 @@
-# Service folder: Docker, compose, scripts
+# The image, and Compose for apps that aren't on Kubernetes
 
-One Dockerfile serves both environments. varlock runs **inside** the container and resolves secrets at start, so secrets never pass through compose, `docker inspect` or disk. The examples below are Node; swap in the runtime of the reference app.
+**The Dockerfile and entrypoint below serve every app**, on Kubernetes or not: one image for both environments, with varlock **inside** the container resolving secrets at start. The examples are Node; swap in the runtime of the reference app.
 
-> Status: proven in dev by format and in dev + prod by `/Volumes/Projects/ghostmind/tags` (2026-09-30). tags' `mcp/docker/` is the closest match to this file. If something here fails in practice, fix this file.
+**The Compose sections are the exception.** Most apps run on Kubernetes in dev and prod ([kubernetes.md](kubernetes.md)) and have no compose file at all. Use Compose only when the target isn't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a standalone host.
+
+> Status: the image pattern is live in prod (portal, tags). If something here fails in practice, fix this file.
 
 ## docker/Dockerfile
 
@@ -17,7 +19,7 @@ RUN arch=$([ "$TARGETARCH" = "amd64" ] && echo x64 || echo arm64) \
      | tar -xz -C /usr/local/bin ./varlock \
   && varlock install-plugin @varlock/hashicorp-vault-plugin@2.1.1
 
-# node_modules live one level above the source, so the dev bind mount of app/ can't hide them
+# node_modules live one level above the source: file sync (or a Compose bind mount) of app/ can't hide them
 WORKDIR /usr/app
 COPY .env.schema ./
 COPY app/package*.json ./
@@ -58,7 +60,9 @@ Build context is the **service folder** (`..` from `docker/`). When the app impo
 
 See the prod branch under compose.prod.yaml below: in prod, the entrypoint loops instead of `exec`.
 
-## docker/compose.dev.yaml
+## Compose only: docker/compose.dev.yaml
+
+On Kubernetes, hot reload comes from Skaffold's file sync instead of this bind mount ([kubernetes.md](kubernetes.md)).
 
 ```yaml
 services:
@@ -85,7 +89,9 @@ The dev server takes its port from the schema: `"dev": "next dev --port $PORT"`,
 
 To test a container by hand, run it on the project network (`docker run --network <project>_default …`); on the default bridge it can't reach Vault.
 
-## docker/compose.prod.yaml
+## Compose only: docker/compose.prod.yaml
+
+For a standalone host (`deploy` → compose-host.md).
 
 ```yaml
 services:
@@ -125,7 +131,7 @@ fi
 
 Internal-only services (workers) drop `ports:` entirely.
 
-## scripts/
+## Compose only: scripts/
 
 ```bash
 # scripts/dev.sh
@@ -150,6 +156,8 @@ export TAILSCALE_IP=$(tailscale ip -4)        # only if the Mac reaches this por
 `-p <project>` puts every app of the project on one network. `--force-recreate` matters in prod: without it an unchanged image isn't restarted, and the deploy's "restarted since the deploy began" check fails. The project name also prefixes named volumes (`<project>_tunnel-creds`); when migrating, keep `-p` identical to the legacy project name so volumes carry over. `dev.sh` is called through `varlock run --include-internal --`, so `${PORT}` and `${VAULT_*}` are set when compose interpolates. **`--include-internal` is required whenever a child needs `VAULT_TOKEN`**: the token is an internal item, and without the flag varlock hands the child an empty one, so the dev container can't reach Vault and scripts calling the `vault` CLI get permission denied. Routines that don't pass the token on (host-only builds, the traefik dev script) can drop the flag. `prod.sh` runs **without** varlock: `compose.prod.yaml` is literal and only the container talks to Vault, so the server and CI never hold app secrets.
 
 ## meta.json
+
+On Kubernetes the routine is `"dev": "skaffold dev"` and there is no `prod` routine (prod deploys through CI only). The Compose form:
 
 ```json
 {

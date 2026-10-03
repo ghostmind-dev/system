@@ -108,6 +108,38 @@ for S in "${SERVICES[@]}"; do
         say WARN dockerfile "$DF" "entrypoint is not varlock: the container won't resolve its own secrets"
     fi
   fi
+  # kubernetes (the default target)
+  K="$S/k8s"; N=$(basename "$S")
+  if [ -d "$K" ]; then
+    PRODM=$(ls "$K"/*.yaml 2>/dev/null | grep -v '\.dev\.yaml$' | head -1)
+    [ -n "$PRODM" ] || say FAIL k8s "$K" "no prod manifest (k8s/<app>.yaml)"
+    [ -n "$PRODM" ] && ! has 'image:\s*IMAGE\s*$' "$PRODM" && say FAIL k8s "$PRODM" "prod manifest must use 'image: IMAGE' (CI replaces it with the built digest)"
+    if [ -n "$PRODM" ] && [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA"; then
+      has 'VAULT_JWT_ROLE' "$PRODM" || say FAIL k8s "$PRODM" "the app reads Vault but the Deployment sets no VAULT_JWT_ROLE (login by service account)"
+      has 'jwtAuthPath=k8s' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=k8s/oidcToken to @initHcpVault and the VAULT_JWT line (secrets skill)"
+      has 'ts\.net' "$PRODM" && say WARN k8s "$PRODM" "prod VAULT_ADDR should be Vault's private address (http://10.0.0.7:8200)"
+    fi
+    [ -n "$PRODM" ] && has 'VAULT_TOKEN|secretKeyRef' "$PRODM" && say FAIL k8s "$PRODM" "no token or secret handed to a prod pod: it logs in to Vault with its service account"
+    if ls "$K"/*.dev.yaml >/dev/null 2>&1; then
+      SK="$S/skaffold.yaml"
+      if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
+      else
+        has 'kubeContext:\s*orbstack' "$SK" || say FAIL skaffold "$SK" "pin deploy.kubeContext: orbstack so skaffold can never deploy to prod"
+        has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
+        has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the local cluster uses the image directly)"
+      fi
+      [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
+      ls "$K"/*.dev.yaml | while read -r dm; do
+        grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"
+      done
+    else
+      [ -f "$D/compose.dev.yaml" ] || say WARN k8s "$K" "no dev manifest (k8s/<app>.dev.yaml + skaffold.yaml)"
+      [ -f "$D/compose.dev.yaml" ] && say WARN k8s "$S" "prod is on Kubernetes but dev still uses Compose: move dev to Skaffold (reference: portal)"
+    fi
+  elif [ -f "$S/docker/Dockerfile" ] && ls "$D"/compose*.yaml >/dev/null 2>&1; then
+    say WARN target "$S" "Compose only: fine for a non-cluster target (Cloud Run, standalone host); otherwise Kubernetes is the default (new-app kubernetes.md)"
+  fi
+  [ "$N" = traefik ] && say WARN traefik "$S" "Traefik is no longer part of the pattern: the tunnel routes straight to each app's Service"
   # package.json dev port
   P="$S/app/package.json"
   [ -f "$P" ] && has '"dev"\s*:\s*"[^"]*--port[ =]?[0-9]+' "$P" && \
@@ -117,6 +149,7 @@ done
 # ---------- workflows ----------
 for w in "$ROOT"/.github/workflows/*.y*ml; do
   [ -f "$w" ] || continue
+  has 'kubectl .*(--context[ =]ghostmind|config use-context ghostmind)' "$w" && say FAIL workflow "$w" "a stored prod kube context in CI: log in with the run's OIDC token (_deploy-k8s.yaml)"
   has 'policy=admin' "$w" && say FAIL workflow "$w" "CI mints an admin Vault token: CI only mints single-use logins (deploy skill)"
   has 'VAULT_TOKEN:\s*\$\{\{\s*secrets\.' "$w" && say FAIL workflow "$w" "a Vault token in GitHub secrets: CI never needs one"
   has 'run vault kv export|/run/secrets/\$' "$w" && say FAIL workflow "$w" "legacy secret export to /run/secrets: use the single-use login flow"
