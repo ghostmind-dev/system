@@ -7,16 +7,18 @@
     {
       "name": "system",
       "source": "./",
-      "description": "The Ghostmind development system: secrets (varlock + Vault), app building blocks, deploys and server hardening, databases, and migrating legacy apps",
+      "description": "The Ghostmind development system: Kubernetes in prod and dev (k3s, Skaffold), secrets (varlock + Vault), deploys through GitHub Actions, app building blocks, databases, migrating and auditing projects",
       "category": "development",
       "keywords": [
+        "kubernetes",
+        "k3s",
+        "skaffold",
         "varlock",
         "vault",
         "docker",
         "deploy",
         "hetzner",
-        "hasura",
-        "scaffolding"
+        "hasura"
       ]
     }
   ],

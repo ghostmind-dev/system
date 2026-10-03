@@ -10,7 +10,7 @@ description: >-
 
 Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define the target. The full reference conversion is `/Volumes/Projects/ghostmind/tags` (seven apps, Terraform and iOS included; dev and prod green on 2026-09-30).
 
-Keep the old files and the old deploy working until the new setup is proven. References: `tags` (a multi-app product) and `/Volumes/Projects/ghostmind/users` (a single-app shared service that other products call). Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
+**The target is Kubernetes** (prod on the k3s cluster, dev with Skaffold), unless the app is one of the exceptions that stays on Compose. Keep the old files and the old deploy working until the new setup is proven. References: `tags` (a multi-app product) and `/Volumes/Projects/ghostmind/users` (a single-app shared service that other products call). Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
 
 ## Steps
 
@@ -24,7 +24,7 @@ Keep the old files and the old deploy working until the new setup is proven. Ref
 3. **Write values into Vault** without printing them: pipe straight from one command to the other. Normalize the way compose `env_file` did: trim whitespace, **then** strip one pair of matching quotes (`APPLE_ID="x"   ` otherwise lands in Vault with its quotes). Re-check by hash afterwards. Leave `kv/` untouched.
 4. **Keep legacy names baked into real resources.** Databases (`tags-db-local`), buckets (`tags-local-bucket`) and Terraform state (`<meta.id>/local/terraform/…`) keep their `local` names. Map them in the schema (`if(forEnv(prod), "prod", "local")`) rather than moving data.
 5. **Write the schema** (one `.env.schema` per app, `secrets` skill). `varlock load --agent` resolves with `APP_ENV=dev`, and again with `APP_ENV=prod VAULT_ROLE_ID= VAULT_SECRET_ID=`. *Done when both resolve with no errors.*
-6. **Convert Docker, scripts and meta** to `new-app` → docker.md:
+6. **Convert Docker, scripts and meta** to `new-app` → kubernetes.md (image and entrypoint from docker.md). Write `k8s/<app>.yaml`, `k8s/<app>.dev.yaml` and `skaffold.yaml`; Service names keep the old container names (`<project>-<app>`), so addresses don't change; drop the `traefik/` app and route the tunnel straight to each Service. The points below still apply, the Compose ones only to an app that stays on Compose:
    - `compose.local.yaml` → `compose.dev.yaml` (and `ingress.local.yaml` → `ingress.dev.yaml`), with relative paths and no `env_file`;
    - keep `-p <project>` identical to the legacy compose project name, so named volumes (`<project>_tunnel-creds`) carry over;
    - the varlock entrypoint, with the binary that matches the base image;
@@ -36,7 +36,7 @@ Keep the old files and the old deploy working until the new setup is proven. Ref
    - app code sitting at the repo root moves into its own service folder.
 7. **Delete legacy files carefully.** `.env.local` goes immediately (varlock always loads that name). A legacy `.env.prod` shares its name with a file varlock would read: confirm its values are in Vault by hash, then delete it. Then `.env.base` and `.env.template`. *Done when `git status` shows only `.env.schema` as the committed env file, and nothing app-specific is left at the root.*
 8. **Prove dev**: hot reload works and the app behaves exactly as before.
-9. **Switch the deploy** with the `deploy` skill: its *Validate before merging* checks, then *Moving a legacy project onto this flow*. That covers the one-time authorization, the redacted survey, **the consumers of every published port** (a shared service's callers break silently), the deploy key, the cutover order (single-app: merging is the cutover) and credential cleanup. *Done when every app is green on the new workflows and the server holds no standing credential.*
+9. **Switch the deploy** with the `deploy` skill: project access on the cluster, a Vault role per app, `_deploy-k8s.yaml` + `deploy.yaml`, its validation checks. Moving from a host to the cluster changes where consumers find a shared service: update its address in Vault and check the consumers. For an app staying on a Compose host: `deploy` → compose-host.md, *Moving a legacy project onto this flow*. That covers the one-time authorization, the redacted survey, **the consumers of every published port** (a shared service's callers break silently), the deploy key, the cutover order (single-app: merging is the cutover) and credential cleanup. *Done when every app is green on the new workflows and the server holds no standing credential.*
 10. **Remove the meta.json keys** `compose`, `secrets` and `custom`.
 
 ## Traps seen in practice

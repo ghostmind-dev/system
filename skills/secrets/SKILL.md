@@ -37,11 +37,11 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 
 ## The schema
 
-**One committed `.env.schema` per app, for both environments.** Values that differ per environment use `if(forEnv(prod), <prod>, <dev>)`. Reference: `/Volumes/Projects/ghostmind/tags/city/.env.schema` (proven in dev and prod).
+**One committed `.env.schema` per app, for both environments.** Values that differ per environment use `if(forEnv(prod), <prod>, <dev>)`. References, both live in prod: `/Volumes/Projects/ghostmind/portal/tunnel/.env.schema` and `/Volumes/Projects/ghostmind/tags/city/.env.schema`.
 
 ```bash
 # @plugin(@varlock/hashicorp-vault-plugin@2.1.1)
-# @initHcpVault(url=$VAULT_ADDR, token=$VAULT_TOKEN, roleId=$VAULT_ROLE_ID, secretId=$VAULT_SECRET_ID, defaultPath=ghostmind/project/<project>/<app>)
+# @initHcpVault(url=$VAULT_ADDR, token=$VAULT_TOKEN, jwtRole=$VAULT_JWT_ROLE, jwtAuthPath=k8s, oidcToken=$VAULT_JWT, defaultPath=ghostmind/project/<project>/<app>)
 # @currentEnv=$APP_ENV
 # @defaultRequired=true
 # @defaultSensitive=false
@@ -50,14 +50,16 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 APP_ENV=dev
 # @type=url
 VAULT_ADDR=
-# dev: your shell's token. prod: empty, the AppRole below is used instead.
+# dev: a short-lived dev-session token (the Secret vault-dev in the local cluster), or your shell's token
+# for host scripts. prod: empty, the login below is used instead.
 # @type=vaultToken @sensitive @required=false
 VAULT_TOKEN=
-# prod: the single-use login compose mounts into the container (deploy skill)
+# prod in the cluster: the Deployment sets VAULT_JWT_ROLE, and the pod's service-account token (audience
+# vault, mounted by Kubernetes) is traded for a Vault token at auth/k8s. Nothing secret is handed over.
+# @required=false
+VAULT_JWT_ROLE=
 # @sensitive @internal @required=false
-VAULT_ROLE_ID=if(forEnv(prod), exec("cat /run/secrets/vault_role_id"))
-# @sensitive @internal @required=false
-VAULT_SECRET_ID=if(forEnv(prod), exec("cat /run/secrets/vault_secret_id"))
+VAULT_JWT=if($VAULT_JWT_ROLE, exec("cat /var/run/secrets/vault/token"))
 
 # --- app config
 # @type=port
@@ -78,7 +80,12 @@ STRIPE_SECRET_KEY=if(forEnv(prod), vaultSecret("ghostmind/global/stripe/prod"), 
 OPENROUTER_API_KEY=vaultSecret("ghostmind/global/openrouter")
 ```
 
-- **`if()` is lazy**: the branch for the other environment never runs, so prod's `exec("cat /run/secrets/…")` and prod-only Vault paths are never touched in dev.
+- **`if()` is lazy**: the branch for the other environment never runs, so the pod-only `exec("cat /var/run/secrets/vault/token")` and prod-only Vault paths are never touched in dev.
+- **Who logs in where:**
+  - *prod pod:* its service-account token, through `auth/k8s`, role `<project>-<app>` (set up in `new-app` → kubernetes.md);
+  - *dev pod:* a 12-hour `dev-session` token that the app's `scripts/dev-setup.sh` puts in the local Secret `vault-dev`. That policy reads dev paths only, never `…/prod`. Never the user's own token;
+  - *host scripts on the Mac:* the shell's `VAULT_TOKEN`.
+- An app deployed to a Compose host instead of the cluster uses AppRole lines here (`deploy` → compose-host.md).
 - **Use `if(forEnv(prod), …)`, not `remap()`.** `remap($APP_ENV, dev=a, prod=b)` returns the literal environment name.
 - **`vaultSecret("path#KEY")`** reads a Vault key whose name differs from the item. Use it instead of renaming app code or duplicating a value in Vault.
 - Separate `.env.dev` / `.env.prod` files also work (format uses them). New apps use the single schema.
@@ -98,11 +105,11 @@ Rules:
 | Where | How |
 |---|---|
 | Host scripts / routines | `varlock run -- bash scripts/x.sh`, from the **app folder** (varlock only looks for `.env.schema` in the cwd) |
-| A host script that needs prod config (Terraform prod, an EAS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_ROLE_ID= VAULT_SECRET_ID= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty values skip the `/run/secrets` reads |
-| A child that needs the Vault token (dev compose passing it to the container, scripts calling the `vault` CLI) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
+| A host script that needs prod config (Terraform prod, an EAS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
+| A child that needs the Vault token (scripts calling the `vault` CLI, a Compose app passing it to its container) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
 | Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …`, as the `database` skill's `create_db` does |
-| Compose on the host (for `${PORT}` interpolation in the compose file) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |
-| Inside a container | `ENTRYPOINT ["varlock","run","--","/entrypoint.sh"]` (see `new-app`) |
+| A Compose app in dev (non-Kubernetes targets only; for `${PORT}` interpolation) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |
+| Inside a container (dev and prod pods) | `ENTRYPOINT ["varlock","run","--","/entrypoint.sh"]` (see `new-app`) |
 | GitHub Actions | `dmno-dev/varlock-action@v1`, or `varlock run --` in a step |
 | Next.js / Vite | optional `@varlock/nextjs-integration` / `@varlock/vite-integration` for type-safe `ENV` access; `varlock run` alone is enough |
 
@@ -113,6 +120,6 @@ Rules:
 - "No value found" means the path or key does not exist. Check it with `vault kv get -format=json <path> | jq '.data.data | keys'`.
 - The process environment wins over every file. A stale `export KEY=...` in the shell, or an old `run` injection, silently overrides the schema.
 - Keep varlock current (`brew upgrade varlock`); the plugin needs a recent binary.
-- Check prod from the Mac: `APP_ENV=prod VAULT_ROLE_ID= VAULT_SECRET_ID= varlock load --agent` in the app folder.
+- Check prod from the Mac: `APP_ENV=prod VAULT_JWT_ROLE= varlock load --agent` in the app folder (your own token; the empty role skips the pod-only login).
 - **Compare values by hash, never by printing them.** `varlock run` redacts the child's stdout, so hash inside the child: `varlock run -- bash -c 'printf %s "$KEY" | shasum | cut -c1-8'`. For Vault: `vault kv get -field=KEY <path> | shasum | cut -c1-8`.
 - The Vault plugin has a fixed 10 s timeout and no retry. Intermittent timeouts under heavy local load are the plugin, not Vault; re-run.

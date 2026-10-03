@@ -28,16 +28,17 @@ Bring one project in line with the system as it is **today**. The `system` skill
    | `scripts` | `scripts/*.ts` (run custom) → `scripts/*.sh` | `new-app` → docker.md |
    | `compose`, `prod-sh`, `port` | no `env_file`, relative paths, `compose.dev.yaml`; bind `127.0.0.1` / `${PRIVATE_IP}` / `${TAILSCALE_IP}`, never all interfaces; Traefik without host ports; `--force-recreate`; `--port $PORT`; a free port from the registry | `new-app` → docker.md, `system` (Ports) |
    | `dockerfile` | glibc varlock on Debian/Ubuntu; `TARGETARCH`; varlock entrypoint | `new-app` → docker.md |
-   | `workflow` | the reusable `_deploy.yaml` + per-app callers | `deploy` |
+   | `k8s`, `skaffold`, `target`, `traefik` | prod + dev manifests, `skaffold.yaml` pinned to `orbstack` with file sync, Vault login by service account, no Traefik; Compose only for a non-cluster target | `new-app` → kubernetes.md |
+| `workflow` | the reusable `_deploy-k8s.yaml` + one `deploy.yaml` (Compose hosts: `_deploy.yaml` + per-app callers) | `deploy` |
    | `runtime-net` | between Hetzner servers, running prod calls use the private address (10.0.0.x); Tailscale only for a deliberate cross-provider link | `system` rule 8 |
    | `plugin` | add `plugin/` (`.mcp.json` + skill) | `new-app` → blocks.md |
 
-   **Ask first, as one batch, before anything that changes prod** when merged: prod compose bindings, `prod.sh`, workflows, ports other servers call. A shared service's consumers must keep working (`deploy` → *Moving a legacy project*, step 2). **Never** change Vault, Tailscale, GitHub secrets or another project from this skill: list those for the user.
+   **Ask first, as one batch, before anything that changes prod** when merged: prod manifests, workflows, compose bindings, ports and Service names other apps call. A shared service's consumers must keep working (`deploy` → *Moving a legacy project*, step 2). **Never** change Vault, the prod cluster, Tailscale, GitHub secrets or another project from this skill: list those for the user.
 4. **Check what the script can't see:**
    - the project's row in the port registry (`system` skill), with every published port;
    - Vault policies list exactly the paths the schemas read (`vault policy read <project>-<app>`, read-only);
    - reference apps: is there a newer, better pattern in the `system` table this project should follow?
-   - does each app still start in dev (`run routine dev`, hot reload)? Re-run it after any Docker or schema change.
+   - does each app still start in dev (`run routine dev`: `skaffold dev` on the `orbstack` context) and hot-reload an edit? Re-run it after any Docker, manifest or schema change.
 5. **Re-run the audit** until it reports `0 failing check(s)`. Each remaining `WARN` is fixed or explained. *Done when the audit is at zero failures and every remaining warning has a stated reason.*
 6. **Report**: failures before → after, what changed (by file), what needs the user (shared infra, prod changes awaiting a yes, legacy apps to migrate). Don't commit or push unless the user asks.
 
