@@ -36,7 +36,9 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
    - **Between projects and to Vault: an address stored in Vault or the schema** (for example `DB_USERS_ENDPOINT`, `VAULT_ADDR=http://10.0.0.7:8200`), never a hardcoded cluster name, so an app can move without code changes.
    - **Between Hetzner servers: the Hetzner private network (10.0.0.x), never Tailscale.** It is free, built in and one less thing to fail.
    - **Across providers** (Hetzner ↔ Google Cloud, the M1 Mac…): Tailscale is allowed for running prod traffic, as a deliberate link. The node is tagged (tagged nodes don't expire), the ACL allows only that path, and the link is monitored. For a managed service with no persistent host (Cloud Run), use public HTTPS with auth instead.
+   - **Shared users:** local users in dev (`state.users.svc.cluster.local:5090`) and the same Service on 5080 in prod, both through `DB_USERS_ENDPOINT` in Vault. Dev can't read the prod value.
    - **Dev and deploy** (the Mac, CI reaching the cluster API, SSH, debugging) use Tailscale.
+   Inside the cluster: NetworkPolicies (default deny), no Istio, no Ingress for now (Gateway API if one tunnel ever fronts the whole cluster).
    Addresses: `/Volumes/Projects/home/networking.md`.
 9. **Expose only what must be public.** A Cloudflare tunnel exists only if an endpoint is public, and it sends each hostname straight to its app's Service. There is no Traefik.
 10. **Apps stay portable.** The image plus `.env.schema` is the app. No app depends on a Kubernetes feature to work, so it can run under Compose, on Cloud Run or on another cluster unchanged.
@@ -161,7 +163,8 @@ The old opinionated tooling is gone from new work: no `run` wrappers around Terr
 ## Environment
 
 - No devcontainers: everything runs on the Mac host (projects under `/Volumes/Projects`).
-- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **kubectl contexts:** `orbstack` is the local dev cluster; `ghostmind` is prod (read-only use). Always pass `--context` in scripts, and never rely on the current context.
+- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **kubectl contexts:** `orbstack` is the local dev cluster; `ghostmind` is prod (read-only use). Always pass `--context` in scripts (`--context ghostmind` for prod), and never rely on the current context: OrbStack makes `orbstack` current, so a bare `kubectl` hits the Mac.
+- After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: `orb stop && orb start`. OrbStack has 10 GB of RAM.
 - Compose paths (when an app has them) are **relative to the compose file**; `SRC`/`LOCALHOST_SRC` are legacy.
 - `VAULT_ADDR` and `VAULT_TOKEN` are exported in the shell. There is no `~/.vault-token`, so schemas pass the token explicitly.
 - Tools on the host: `varlock` (brew `dmno-dev/tap/varlock`), `vault`, `docker`, `kubectl`, `skaffold`, `gh`, `tailscale`, `herdr`.

@@ -3,7 +3,9 @@
 Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in prod, and OrbStack's local cluster on the Mac in dev. The image and `.env.schema` are the app; the files below are a thin wrapper around them. Copy from the reference and rename:
 
 - **`/Volumes/Projects/ghostmind/portal`** (`portal/` = the ui, `tunnel/`): the full pattern, prod and dev, no Compose.
-- **`/Volumes/Projects/ghostmind/tags`** (db, city, mcp, native, tunnel): prod on the cluster with Vault logins; its dev still uses Compose.
+- **`/Volumes/Projects/ghostmind/tags`** (db, city, mcp, native, tunnel): several apps in one project, with one shared `k8s/dev-setup.sh` at the project root.
+- **`/Volumes/Projects/ghostmind/users`**: a shared service that stays up in dev (`start` routine) with its own local database.
+- **`/Volumes/Projects/ghostmind/admin`**: stateful (SQLite on a volume), reachable on the tailnet only through Tailscale Serve.
 
 ```
 <app>/
@@ -12,15 +14,19 @@ Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in 
   docker/  Dockerfile  entrypoint.sh       same image for dev and prod (docker.md)
   k8s/     <app>.yaml  <app>.dev.yaml      prod and dev manifests
   skaffold.yaml                dev: build, deploy to the local cluster, sync, logs
-  scripts/ dev-setup.sh        dev pre-deploy hook, when the app needs Vault or a volume
-  meta.json                    routine "dev": "skaffold dev", herdr tab
+  .dockerignore                node_modules, .next, dist (required, see below)
+  meta.json                    routines dev, dev_keep, delete (and start), herdr tab
 ```
+
+The dev pre-deploy hook (`k8s/dev-setup.sh` at the project root, shared by the apps; or inline in `skaffold.yaml` when only the namespace is needed) is described below. There is no `compose.*.yaml` and no AppRole login for a Kubernetes app.
 
 ## Rules
 
 - **The app stays portable.** It works from its image and `.env.schema` alone. No app depends on a Kubernetes feature to work, and it reaches other services only through an address stored in Vault or the schema, never a hardcoded cluster name.
 - **Service names keep the container convention:** `<project>-<app>` on the app's port (`http://portal-ui:5096`), identical in dev and prod. One project = one namespace, named after the project.
 - **Prod changes only through a merge to main.** No `kubectl apply`, `edit` or `exec` against prod to change an app. Read-only checks (status, logs) are fine.
+- **`.dockerignore` is required** and excludes `node_modules`, `.next` and `dist`. Without it the Mac's `node_modules` is copied into the Linux image and hides the image's own.
+- **Never put a `Namespace` object in an app's files.** CI isn't allowed to create namespaces, and Skaffold would delete a shared namespace on Ctrl-C. The pre-deploy hook creates it.
 - **Each `skaffold.yaml` pins `deploy.kubeContext: orbstack`**, so `skaffold dev` can never touch prod.
 
 ## Prod manifest: `k8s/<app>.yaml`
@@ -103,18 +109,36 @@ portForward:
 ```
 
 - **Hot reload is required.** `sync: infer` copies each edited file matching those patterns into the running container, at the path the Dockerfile's `COPY` lines give it, and the dev server (Vite, Next, nodemon…) reloads. A change outside the synced folders (`package.json`, the Dockerfile) rebuilds the image. List the source folders the dev server watches, and nothing that needs a rebuild.
-- **Routine:** `"dev": "skaffold dev"`, run in the app folder. One `skaffold dev` per app, each showing only its own logs. Ctrl-C removes that app only.
+- **Routines**, every Kubernetes app gets these in its `meta.json`, run in the app folder (one `skaffold dev` per app, each showing only its own logs):
+  - `dev`: `skaffold dev --no-prune`. Ctrl-C removes the workload and keeps the image.
+  - `dev_keep`: `skaffold dev --no-prune --cleanup=false`. Ctrl-C leaves the workload running.
+  - `delete`: `skaffold delete`. Removes a workload left running; the image stays.
+  - `start`: `skaffold run --no-prune`, detached, for an always-on shared service (local users).
+  There is no `prod` routine.
 - **`localPort`** comes from the port registry in the `system` skill: it's a port on the Mac, so it must be unique across projects.
 
-## `scripts/dev-setup.sh`: the pre-deploy hook
+## `k8s/dev-setup.sh`: the pre-deploy hook
 
-Runs before each `skaffold dev` deploy, on the local cluster only (`kubectl --context "$SKAFFOLD_KUBE_CONTEXT"`). Copy `portal/tunnel/scripts/dev-setup.sh`. It:
+Runs before each Skaffold deploy, on the local cluster only (`kubectl --context "$SKAFFOLD_KUBE_CONTEXT"`). Copy `tags/k8s/dev-setup.sh` (project root, shared by every app of the project). It:
 
 1. creates the namespace (idempotent: `create --dry-run=client -o yaml | apply`);
 2. creates any persistent volume claim the app keeps across runs;
-3. **creates the `vault-dev` Secret from a 12-hour dev-session token**: `vault token create -policy=dev-session -ttl=12h`. That policy reads dev paths only, never `…/prod`. Never put the user's own token in the cluster.
+3. **creates the `vault-dev` Secret from a 12-hour dev-session token**: `vault token create -policy=dev-session -ttl=12h`, reused while it has more than 1 hour left. That policy reads dev paths only, never `…/prod`. Never put the user's own token in the cluster.
 
 An app with no secrets and no volume only needs the namespace, as an inline hook (see `portal/portal/skaffold.yaml`).
+
+## Shared users service
+
+Apps that need users read `DB_USERS_ENDPOINT` from Vault like any other value; nothing in the app changes between environments.
+
+- **Dev:** the local users service (users repo, `start` routine) at `http://state.users.svc.cluster.local:5090/v1/graphql`, stored in `ghostmind/global/users#DB_USERS_ENDPOINT`, on the dev database `users_state_local`. A new app gets local users with no setup. Dev can never read the prod address (`dev-session` denies `…/prod`).
+- **Prod:** the same Service name on port 5080, in `ghostmind/global/users/prod#DB_USERS_ENDPOINT`.
+
+## Gotchas
+
+- OrbStack makes `orbstack` the current kube context, so a plain `kubectl` hits the Mac. Every script that touches prod passes `--context ghostmind`.
+- After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: run `orb stop && orb start`. OrbStack has 10 GB of RAM, so keep an eye on how many apps run at once.
+- Hasura in a read-only container needs `emptyDir` volumes at `/root/.hasura` and `/hasura-project/seeds` for its CLI.
 
 ## Tunnel: straight to the Services, no Traefik
 
@@ -131,6 +155,8 @@ ingress:
 
 - **Prod:** two replicas on different servers (two connectors), running the existing tunnel from **its own credentials JSON** in Vault (`ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`), written to a RAM `emptyDir`. That credential can only run this one tunnel: no account certificate in prod, and no DNS rights.
 - **Dev:** the `ghostmind.app` account certificate (`ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`) creates the dev tunnel and routes DNS; its credentials JSON lives on a volume kept across runs.
+- **No Ingress and no Gateway for now.** The tunnel runs as 2 copies and sends each hostname straight to its Service. If the cluster ever consolidates onto one tunnel, use Gateway API, never classic Ingress (ingress-nginx is retired).
+- **No Istio.** Isolate with NetworkPolicies (default deny), and add k3s WireGuard between nodes later.
 - **One host carrying several services** (the `/mcp` and `/api` paths of the Domains rule): add `path:` to the ingress rules, most specific first, each pointing at its Service.
 
 ## Deploy

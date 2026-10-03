@@ -128,6 +128,7 @@ for S in "${SERVICES[@]}"; do
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
         has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the local cluster uses the image directly)"
       fi
+      [ -f "$S/.dockerignore" ] && has 'node_modules' "$S/.dockerignore" || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist: the Mac's node_modules would hide the image's own"
       [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
       ls "$K"/*.dev.yaml | while read -r dm; do
         grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"
