@@ -28,7 +28,7 @@ Bring one project in line with the system as it is **today**. The `system` skill
    | `scripts` | `scripts/*.ts` (run custom) → `scripts/*.sh` | `new-app` → docker.md |
    | `compose`, `prod-sh`, `port` | no `env_file`, relative paths, `compose.dev.yaml`; bind `127.0.0.1` / `${PRIVATE_IP}` / `${TAILSCALE_IP}`, never all interfaces; Traefik without host ports; `--force-recreate`; `--port $PORT`; a free port from the registry | `new-app` → docker.md, `system` (Ports) |
    | `dockerfile` | glibc varlock on Debian/Ubuntu; `TARGETARCH`; varlock entrypoint | `new-app` → docker.md |
-   | `k8s`, `skaffold`, `target`, `traefik` | prod + dev manifests, `skaffold.yaml` pinned to `orbstack` with file sync, Vault login by service account, no Traefik; Compose only for a non-cluster target | `new-app` → kubernetes.md |
+   | `k8s`, `skaffold`, `target`, `traefik` | prod + dev manifests, `skaffold.yaml` pinned to `orbstack` with file sync, `.dockerignore`, routines dev/dev_keep/delete, Vault login by service account, no Traefik; Compose only for a non-cluster target | `new-app` → kubernetes.md |
 | `workflow` | the reusable `_deploy-k8s.yaml` + one `deploy.yaml` (Compose hosts: `_deploy.yaml` + per-app callers) | `deploy` |
    | `runtime-net` | between Hetzner servers, running prod calls use the private address (10.0.0.x); Tailscale only for a deliberate cross-provider link | `system` rule 8 |
    | `plugin` | add `plugin/` (`.mcp.json` + skill) | `new-app` → blocks.md |
