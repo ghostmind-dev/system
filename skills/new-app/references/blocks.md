@@ -14,6 +14,36 @@ The most common product shape is a remote MCP, a web app and often a native app,
 - **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/playground/format/mac/app/Sources/Format/Account.swift`.
 - **One Google OAuth client per product.** `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` live once at `ghostmind/project/<project>/auth` (singular `project`), and every schema points there. Shared signing secrets (`HASURA_GRAPHQL_JWT_SECRET`, the state HMAC key) live there too.
 
+## A remote MCP on the cluster is stateless
+
+On Kubernetes an MCP runs several replicas behind a Service and nothing pins a client to a pod. A server that keeps sessions in process memory (a `transports` map filled at `initialize`) answers `404 Session not found` (-32001) as soon as the next request lands on another pod. potion's prod MCP did exactly that at 2 replicas, and dev hid it because dev ran one pod. So: **no session map, no `sessionIdGenerator`, a fresh server per request, the caller resolved from the bearer token and headers on every request. Any pod answers any request.** Reference: `/Volumes/Projects/ghostmind/potion/mcp` (`app/src/main.ts`, `app/src/auth/google.ts`, `app/test/stateless.smoke.ts`, `k8s/mcp.dev.yaml`). Take the transport from potion and the OAuth from format (above).
+
+- **SDK v2**, which implements spec revision 2026-07-28 (sessions and the `initialize` handshake are gone from the protocol): `@modelcontextprotocol/server` ^2.3.0 + `@modelcontextprotocol/node`, not `@modelcontextprotocol/sdk` 1.x. It needs `zod` ^4.2.0 and `@types/node` ^20.
+- **The shape:**
+
+  ```ts
+  const mcpHandler = createMcpHandler(({ authInfo }) => {
+    const server = new McpServer({ name, version });
+    registerTools(server, authInfo?.extra?.userContext);
+    return server;
+  });
+  const mcpNodeHandler = toNodeHandler(mcpHandler);   // wrapped once, at module level
+
+  app.all('/', async (req, res) => {
+    // authenticate; 401 + WWW-Authenticate when there is no caller; GET and DELETE answer 405
+    req.auth = { token, clientId, scopes: [], extra: { userContext } };
+    await mcpNodeHandler(req, res, req.body);
+  });
+  ```
+
+  The default `legacy: 'stateless'` also serves clients still on the 2025 handshake; no `Mcp-Session-Id` is issued, and one a client sends is ignored.
+- **Auth runs on every request, so cache validated tokens briefly**: per pod, keyed by the sha256 of the token, successes only, 60 s (potion's `auth/google.ts`).
+- **The dev manifest runs `replicas: 2`**, so a request that needs the pod before it can't hide in dev.
+- **Test by deleting the serving pod mid-session**, then calling again without reconnecting. The tunnel pins a connection to one pod, so load alone never reaches the others. potion: 35 tool calls on one client connection, the serving pod deleted three times, zero failures.
+- **Anything a tool must remember between calls lives in the database**, never in the process.
+
+A single-host Compose deploy runs one container and isn't bound by this rule; an MCP that will move to the cluster is.
+
 ## The product's Claude plugin (MCP + skill)
 
 The remote MCP gives Claude the app's **actions**; a skill gives it the app's **concepts**: what the entities are, which tool to reach for, and the traps. Ship both together as one Claude plugin in the product repo, so installing the plugin is all a user does. Reference: `/Volumes/Projects/ghostmind/potion/plugin`.

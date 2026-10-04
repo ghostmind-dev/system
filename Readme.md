@@ -5,7 +5,7 @@ The Ghostmind development system, packaged as one Claude Code plugin at the repo
 ## Pillars
 
 - **Secrets**: varlock `.env.schema` in every app, pointing into Vault (`ghostmind/` KV v2: `global/<provider>`, `project/<project>/<app>`).
-- **Run**: Kubernetes in prod and in dev, for most apps. Prod is a k3s cluster on Hetzner; dev is OrbStack's local cluster with Skaffold and hot reload. Compose remains for targets that aren't the cluster (Cloud Run, a one-off container, a script project).
+- **Run**: Kubernetes in prod and in dev, for most apps. Prod is a k3s cluster on Hetzner; dev is an OrbStack cluster (this Mac's, or another Mac's over Tailscale) with Skaffold and hot reload. Compose remains for targets that aren't the cluster (Cloud Run, a one-off container, a script project).
 - **Deploy**: GitHub Actions on merge to main. It builds the image, logs in to the cluster with the run's own OIDC token, and applies the app's manifest by digest. Nothing changes prod any other way, and no cluster or Vault credential is stored in CI. Each pod logs in to Vault with its service-account token.
 
 Products are **AI-operable by default**: each ships a remote MCP plus a Claude plugin whose skill teaches the app, so the user can operate it through Claude.
@@ -26,6 +26,6 @@ New apps replicate **reference apps** (portal for how an app is packaged and run
 
 ## Status
 
-- Kubernetes is the default since 2026-10-03. Live in prod on the cluster: `ghostmind/portal` (also on Kubernetes in dev, with hot reload) and `ghostmind/tags` (dev still on Compose).
-- Still to move: tags' dev to Skaffold; format, potion, users and noice to the cluster.
+- Kubernetes is the default since 2026-10-03. Live in prod on the cluster: `ghostmind/portal` and `ghostmind/tags`, both also on Kubernetes in dev with hot reload (tags since 2026-10-04).
+- Still to move: format, potion, users and noice to the cluster.
 - The earlier Compose-on-a-host flow (single-use AppRole logins) is kept as a reference for apps that aren't on the cluster.

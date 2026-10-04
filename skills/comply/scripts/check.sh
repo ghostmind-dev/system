@@ -124,11 +124,13 @@ for S in "${SERVICES[@]}"; do
       SK="$S/skaffold.yaml"
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
-        has 'kubeContext:\s*orbstack' "$SK" || say FAIL skaffold "$SK" "pin deploy.kubeContext: orbstack so skaffold can never deploy to prod"
+        has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; skaffold dev uses the current kube context (paired with the Docker context on the same machine)"
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
-        has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the local cluster uses the image directly)"
+        has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the cluster on the Docker host uses the image directly)"
       fi
-      [ -f "$S/.dockerignore" ] && has 'node_modules' "$S/.dockerignore" || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist: the Mac's node_modules would hide the image's own"
+      # an app that builds from the repo root (skaffold context: .., for a shared/ folder) uses the root .dockerignore
+      DI="$S/.dockerignore"; [ -f "$SK" ] && has 'context:\s*\.\.' "$SK" && DI="$ROOT/.dockerignore"
+      [ -f "$DI" ] && has 'node_modules' "$DI" || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist (at the repo root for an app that builds from it): the Mac's node_modules would hide the image's own"
       [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
       ls "$K"/*.dev.yaml | while read -r dm; do
         grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"
@@ -139,6 +141,18 @@ for S in "${SERVICES[@]}"; do
     fi
   elif [ -f "$S/docker/Dockerfile" ] && ls "$D"/compose*.yaml >/dev/null 2>&1; then
     say WARN target "$S" "Compose only: fine for a non-cluster target (Cloud Run, standalone host); otherwise Kubernetes is the default (new-app kubernetes.md)"
+  fi
+  # a remote MCP on the cluster is stateless: several replicas, nothing pins a client to a pod
+  if [ -d "$K" ] && [ -f "$S/app/package.json" ] && has '@modelcontextprotocol/' "$S/app/package.json"; then
+    SRC="$S/app/src"; [ -d "$SRC" ] || SRC="$S/app"
+    grep -rEq --exclude-dir=node_modules --exclude-dir=dist 'sessionIdGenerator\s*:\s*[^u[:space:]]|transports(\[|\.set\()' "$SRC" 2>/dev/null && \
+      say FAIL mcp-state "$S" "the MCP keeps sessions in process memory: with 2 replicas the next request reaches a pod that never saw the session (404 Session not found). Make it stateless (new-app blocks.md)"
+    has '"@modelcontextprotocol/sdk"' "$S/app/package.json" && \
+      say WARN mcp-state "$S/app/package.json" "@modelcontextprotocol/sdk 1.x: move to v2 (@modelcontextprotocol/server + /node), which has no sessions (npx @modelcontextprotocol/codemod@latest v1-to-v2 .)"
+    for dm in "$K"/*.dev.yaml; do
+      [ -f "$dm" ] && grep -Eq '^kind:\s*Deployment' "$dm" && ! has '^\s*replicas:\s*[2-9]' "$dm" && \
+        say WARN mcp-state "$dm" "an MCP's dev manifest runs replicas: 2, so a pod-bound request can't hide in dev"
+    done
   fi
   [ "$N" = traefik ] && say WARN traefik "$S" "Traefik is no longer part of the pattern: the tunnel routes straight to each app's Service"
   # package.json dev port
