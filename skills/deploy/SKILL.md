@@ -52,6 +52,7 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
    - the schema resolves for prod from the Mac: `APP_ENV=prod VAULT_JWT_ROLE= varlock load --agent` in the app folder (your own token; the empty role skips the pod-only login);
    - the prod image builds: `docker build --platform linux/amd64 --build-arg APP_ENV=prod -f docker/Dockerfile .`;
    - the manifest is valid: `kubectl apply --dry-run=client -f k8s/<app>.yaml`;
+   - a remote MCP is stateless (`new-app` → blocks.md): no session map in the code, and on dev with 2 replicas a tool call still answers after the serving pod is deleted. Prod runs 2 replicas with nothing pinning a client to a pod, so an in-memory session answers `Session not found` about every other request;
    - the container runs with a read-only root filesystem and as the manifest's user (run the prod image locally with `--read-only --tmpfs /tmp`).
 6. **Merge, then verify read-only:** the workflow is green; `kubectl -n <project> get pods` shows the new pods `Running` and ready with 0 restarts; the public URL answers; `kubectl -n <project> logs deploy/<app>` shows no varlock or Vault error. *Done when all four are observed.*
 

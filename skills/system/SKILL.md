@@ -55,7 +55,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
     app/                         source
     docker/  Dockerfile  entrypoint.sh
     k8s/     <app>.yaml  <app>.dev.yaml      prod and dev manifests
-    skaffold.yaml                dev on the local cluster, pinned to kubeContext: orbstack
+    skaffold.yaml                dev on the current kube context (names no cluster)
     scripts/                     dev-setup.sh (dev pre-deploy hook), migrate.sh, create-db.sh…
     meta.json                    routine "dev": "skaffold dev" + herdr tab for this app
   plugin/                        the product's Claude plugin: .mcp.json + skills (see new-app → blocks.md)
@@ -77,7 +77,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | **Vault login by service account** | A pod that reads secrets | `/Volumes/Projects/ghostmind/tags/city/k8s/city.yaml` + `.env.schema`; `portal/tunnel` |
 | **Tunnel without Traefik** | Something must be public | `/Volumes/Projects/ghostmind/portal/tunnel`, `/Volumes/Projects/ghostmind/tags/tunnel` |
 | Cluster and node setup | Adding a node or a project to the cluster | `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` |
-| Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/playground/format/mcp` (Express + MCP SDK; Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) |
+| Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/playground/format/mcp` (Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) for the OAuth; `/Volumes/Projects/ghostmind/potion/mcp` (`app/src/main.ts`) for the transport: **stateless on the cluster**, MCP SDK v2, no sessions (`new-app` → blocks.md) |
 | **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/ghostmind/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`); smaller: `/Volumes/Projects/ghostmind/tags/plugin` |
 | Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/playground/format/ui` (static React + TanStack, Vite) |
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/ghostmind/potion/ui` (Next.js + next-auth Google) |
@@ -93,7 +93,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Swift macOS app | Native Mac | `/Volumes/Projects/playground/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Python CLI/package | Tooling | `/Volumes/Projects/labo/theme` |
 
-`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). The potion references predate varlock: copy their **app code and structure**, and take secrets, manifests and deploy from the `secrets`, `new-app` and `deploy` skills instead. format's and potion's `traefik/` and Compose files are not the pattern any more. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead.
+`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). The potion references predate varlock: copy their **app code and structure**, and take secrets, manifests and deploy from the `secrets`, `new-app` and `deploy` skills instead. format's and potion's `traefik/` and Compose files are not the pattern any more. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead. Its stateless transport (`app/src/main.ts`) is the reference for every MCP on the cluster.
 
 ## Naming
 
@@ -163,7 +163,7 @@ The old opinionated tooling is gone from new work: no `run` wrappers around Terr
 ## Environment
 
 - No devcontainers: everything runs on the Mac host (projects under `/Volumes/Projects`).
-- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **kubectl contexts:** `orbstack` is the local dev cluster; `ghostmind` is prod (read-only use). Always pass `--context` in scripts (`--context ghostmind` for prod), and never rely on the current context: OrbStack makes `orbstack` current, so a bare `kubectl` hits the Mac.
+- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **A dev machine is a pair**, a kube context and a Docker context for the same OrbStack, switched together (`kubectl config use-context X && docker context use X`): an image exists only on the daemon that built it. Contexts are per Mac and **no file in a repo names a cluster** (no `kubeContext` in `skaffold.yaml`): `skaffold dev` uses the current context. Another Mac's OrbStack over Tailscale needs its Docker context on an SSH-forwarded unix socket, not `ssh://` (Skaffold cannot dial it): `new-app` → kubernetes.md → Dev machines. `ghostmind` is the prod context (read-only use): scripts that touch prod always pass `--context ghostmind`, never the current context.
 - After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: `orb stop && orb start`. OrbStack has 10 GB of RAM.
 - Compose paths (when an app has them) are **relative to the compose file**; `SRC`/`LOCALHOST_SRC` are legacy.
 - `VAULT_ADDR` and `VAULT_TOKEN` are exported in the shell. There is no `~/.vault-token`, so schemas pass the token explicitly.

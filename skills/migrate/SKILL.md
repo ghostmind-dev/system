@@ -30,6 +30,7 @@ Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define t
    - the varlock entrypoint, with the binary that matches the base image;
    - `scripts/*.ts` → `scripts/*.sh`. A routine that needs `cd`, `&&` or quotes becomes a script, because `run routine` has no shell;
    - Terraform → the Terraform block in `new-app` → blocks.md. `plan` must show no changes;
+   - **a remote MCP moving to the cluster becomes stateless** (`new-app` → blocks.md): an in-memory `transports`/session map or `@modelcontextprotocol/sdk` 1.x is drift. Run `npx @modelcontextprotocol/codemod@latest v1-to-v2 .`, rebuild the entry point on `createMcpHandler` + `toNodeHandler` as in `potion/mcp/app/src/main.ts`, set `replicas: 2` in the dev manifest, and prove it by deleting the serving pod mid-session. Upstream guides: `docs/migration/upgrade-to-v2.md` and `support-2026-07-28.md` in `modelcontextprotocol/typescript-sdk`;
    - herdr tabs get `"prefix": false`;
    - **ports:** new unique ones from the registry in the `system` skill. Check `docker ps` too: tags' legacy ports were all held by potion's running containers;
    - rewrite the root `.gitignore` from docker.md (legacy ones hide the new committed files);

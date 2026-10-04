@@ -1,6 +1,6 @@
 # Service folder on Kubernetes (the default)
 
-Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in prod, and OrbStack's local cluster on the Mac in dev. The image and `.env.schema` are the app; the files below are a thin wrapper around them. Copy from the reference and rename:
+Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in prod, and an OrbStack cluster in dev (this Mac's, or another Mac's over Tailscale). The image and `.env.schema` are the app; the files below are a thin wrapper around them. Copy from the reference and rename:
 
 - **`/Volumes/Projects/ghostmind/portal`** (`portal/` = the ui, `tunnel/`): the full pattern, prod and dev, no Compose.
 - **`/Volumes/Projects/ghostmind/tags`** (db, city, mcp, native, tunnel): several apps in one project, with one shared `k8s/dev-setup.sh` at the project root.
@@ -26,8 +26,9 @@ The dev pre-deploy hook (`k8s/dev-setup.sh` at the project root, shared by the a
 - **Service names keep the container convention:** `<project>-<app>` on the app's port (`http://portal-ui:5096`), identical in dev and prod. One project = one namespace, named after the project.
 - **Prod changes only through a merge to main.** No `kubectl apply`, `edit` or `exec` against prod to change an app. Read-only checks (status, logs) are fine.
 - **`.dockerignore` is required** and excludes `node_modules`, `.next` and `dist`. Without it the Mac's `node_modules` is copied into the Linux image and hides the image's own.
+- **A project with a `shared/` folder builds from the repo root** (potion, tags): TypeScript used by several backends lives in `shared/pure` and `shared/server` at the root and is imported through a `@shared/*` alias. Those apps set skaffold `context: ..` with `dockerfile: <app>/docker/Dockerfile`, list `shared/**` and `<app>/app/src/**` under `sync.infer`, use `context: .` in CI, and share ONE root `.dockerignore`; the Dockerfile copies `shared` next to the app so the image mirrors the repo. Changing `context` in a `skaffold.yaml` is not picked up by a running `skaffold dev`: stop it and start it again.
 - **Never put a `Namespace` object in an app's files.** CI isn't allowed to create namespaces, and Skaffold would delete a shared namespace on Ctrl-C. The pre-deploy hook creates it.
-- **Each `skaffold.yaml` pins `deploy.kubeContext: orbstack`**, so `skaffold dev` can never touch prod.
+- **No file names a cluster.** `skaffold.yaml` has no `deploy.kubeContext`: `skaffold dev` deploys to the current kube context and builds on the current Docker context, which must be the same machine (Dev machines, below).
 
 ## Prod manifest: `k8s/<app>.yaml`
 
@@ -77,7 +78,7 @@ The pod's service-account token (audience `vault`, 10 minutes, mounted by Kubern
 
 ## Dev manifest: `k8s/<app>.dev.yaml`
 
-Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault takes `VAULT_ADDR` and `VAULT_TOKEN` from the local Secret `vault-dev` (below).
+Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault takes `VAULT_ADDR` and `VAULT_TOKEN` from the local Secret `vault-dev` (below). **A remote MCP is the exception: `replicas: 2` in dev too**, because it must be stateless and one pod would hide a request that needs the pod before it (blocks.md → A remote MCP on the cluster is stateless).
 
 **Shared things belong to no app.** The namespace, persistent volumes and the `vault-dev` Secret are created by a pre-deploy hook, not listed in one app's manifest, so stopping one app (Ctrl-C) never deletes what another uses.
 
@@ -88,7 +89,7 @@ apiVersion: skaffold/v4beta13
 kind: Config
 metadata: { name: <app> }
 build:
-  local: { push: false }             # OrbStack's cluster uses locally built images directly
+  local: { push: false }             # no registry: the cluster on the Docker host uses the image directly
   tagPolicy: { sha256: {} }
   artifacts:
     - image: <project>-<app>
@@ -98,8 +99,7 @@ build:
         infer: [ "app/src/**", "app/public/**", "app/index.html" ]
 manifests:
   rawYaml: [k8s/<app>.dev.yaml]
-deploy:
-  kubeContext: orbstack              # the local cluster, pinned: never prod
+deploy:                              # no kubeContext: the current one (Dev machines, below)
   kubectl:
     hooks:
       before:
@@ -134,9 +134,30 @@ Apps that need users read `DB_USERS_ENDPOINT` from Vault like any other value; n
 - **Dev:** the local users service (users repo, `start` routine) at `http://state.users.svc.cluster.local:5090/v1/graphql`, stored in `ghostmind/global/users#DB_USERS_ENDPOINT`, on the dev database `users_state_local`. A new app gets local users with no setup. Dev can never read the prod address (`dev-session` denies `…/prod`).
 - **Prod:** the same Service name on port 5080, in `ghostmind/global/users/prod#DB_USERS_ENDPOINT`.
 
+## Dev machines: the kube context and the Docker context travel together
+
+Images are built with `push: false`: an image exists only on the Docker daemon that built it, and only the cluster on that same machine can run it. A dev machine is therefore a **pair**, a kube context and a Docker context for the same OrbStack. Switch both, or the pods fail with `container … can't be pulled`:
+
+```
+kubectl config use-context <machine> && docker context use <machine>
+```
+
+Contexts live in `~/.kube/config` and `~/.docker/contexts`, per Mac, and **no file in a repo names one**: `skaffold.yaml` has no `deploy.kubeContext`, scripts and manifests name no cluster. The one thing a pin used to buy, never deploying dev to prod, is now a habit: look at `kubectl config current-context` before a dev routine.
+
+**Another Mac's OrbStack over Tailscale** (the kube context's server is the tailnet address). Its Docker daemon cannot be an `ssh://` context: Skaffold reads the context but its built-in Docker client cannot dial `ssh://`, and fails after `Checking cache` with `Cannot connect to the Docker daemon at ssh://<host>`, with or without `useDockerCLI`. Forward the remote socket over SSH to a local socket and point the Docker context at that:
+
+```
+mkdir -p ~/.docker/sockets
+ssh -o StreamLocalBindUnlink=yes -o ExitOnForwardFailure=yes -fnNT \
+  -L ~/.docker/sockets/<machine>.sock:/Users/<user>/.orbstack/run/docker.sock <ssh host>
+docker context create <machine> --docker "host=unix://$HOME/.docker/sockets/<machine>.sock"
+```
+
+The forward is one `ssh` process: it dies with a reboot or a dropped tailnet link, and the Docker context fails until it is started again (a launchd agent with `KeepAlive` makes it permanent).
+
 ## Gotchas
 
-- OrbStack makes `orbstack` the current kube context, so a plain `kubectl` hits the Mac. Every script that touches prod passes `--context ghostmind`.
+- A bare `kubectl` hits whatever context is current, normally a dev OrbStack. Every script that touches prod passes `--context ghostmind`.
 - After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: run `orb stop && orb start`. OrbStack has 10 GB of RAM, so keep an eye on how many apps run at once.
 - Hasura in a read-only container needs `emptyDir` volumes at `/root/.hasura` and `/hasura-project/seeds` for its CLI.
 
