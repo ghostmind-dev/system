@@ -4,7 +4,7 @@ Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in 
 
 - **`/Volumes/Projects/ghostmind/portal`** (`portal/` = the ui, `tunnel/`): the full pattern, prod and dev, no Compose.
 - **`/Volumes/Projects/ghostmind/tags`** (db, city, mcp, native, tunnel): several apps in one project, with one shared `k8s/dev-setup.sh` at the project root.
-- **`/Volumes/Projects/ghostmind/users`**: a shared service that stays up in dev (`start` routine) with its own local database.
+- **`/Volumes/Projects/ghostmind/users`**: a shared service that stays up in dev (`start` routine) with its own dev database.
 - **`/Volumes/Projects/ghostmind/admin`**: stateful (SQLite on a volume), reachable on the tailnet only through Tailscale Serve.
 
 ```
@@ -13,7 +13,7 @@ Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in 
   app/                         source
   docker/  Dockerfile  entrypoint.sh       same image for dev and prod (docker.md)
   k8s/     <app>.yaml  <app>.dev.yaml      prod and dev manifests
-  skaffold.yaml                dev: build, deploy to the local cluster, sync, logs
+  skaffold.yaml                dev: build, deploy to the dev cluster, sync, logs
   .dockerignore                node_modules, .next, dist (required, see below)
   meta.json                    routines dev, dev_keep, delete (and start), herdr tab
 ```
@@ -25,7 +25,7 @@ The dev pre-deploy hook (`k8s/dev-setup.sh` at the project root, shared by the a
 - **The app stays portable.** It works from its image and `.env.schema` alone. No app depends on a Kubernetes feature to work, and it reaches other services only through an address stored in Vault or the schema, never a hardcoded cluster name.
 - **Service names keep the container convention:** `<project>-<app>` on the app's port (`http://portal-ui:5096`), identical in dev and prod. One project = one namespace, named after the project.
 - **Prod changes only through a merge to main.** No `kubectl apply`, `edit` or `exec` against prod to change an app. Read-only checks (status, logs) are fine.
-- **`.dockerignore` is required** and excludes `node_modules`, `.next` and `dist`. Without it the Mac's `node_modules` is copied into the Linux image and hides the image's own.
+- **`.dockerignore` is required** and excludes `node_modules`, `.next` and `dist`. Without it the Mac's `node_modules` is copied into the Linux image and hides the image's own. An image that installs no dependencies (cloudflared, Hasura) doesn't need one.
 - **A project with a `shared/` folder builds from the repo root** (potion, tags): TypeScript used by several backends lives in `shared/pure` and `shared/server` at the root and is imported through a `@shared/*` alias. Those apps set skaffold `context: ..` with `dockerfile: <app>/docker/Dockerfile`, list `shared/**` and `<app>/app/src/**` under `sync.infer`, use `context: .` in CI, and share ONE root `.dockerignore`; the Dockerfile copies `shared` next to the app so the image mirrors the repo. Changing `context` in a `skaffold.yaml` is not picked up by a running `skaffold dev`: stop it and start it again.
 - **Never put a `Namespace` object in an app's files.** CI isn't allowed to create namespaces, and Skaffold would delete a shared namespace on Ctrl-C. The pre-deploy hook creates it.
 - **No file names a cluster.** `skaffold.yaml` has no `deploy.kubeContext`: `skaffold dev` deploys to the current kube context and builds on the current Docker context, which must be the same machine (Dev machines, below).
@@ -78,7 +78,7 @@ The pod's service-account token (audience `vault`, 10 minutes, mounted by Kubern
 
 ## Dev manifest: `k8s/<app>.dev.yaml`
 
-Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault takes `VAULT_ADDR` and `VAULT_TOKEN` from the local Secret `vault-dev` (below). **A remote MCP is the exception: `replicas: 2` in dev too**, because it must be stateless and one pod would hide a request that needs the pod before it (blocks.md → A remote MCP on the cluster is stateless).
+Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault takes `VAULT_ADDR` and `VAULT_TOKEN` from the Secret `vault-dev` in the dev cluster (below). **A remote MCP is the exception: `replicas: 2` in dev too**, because it must be stateless and one pod would hide a request that needs the pod before it (blocks.md → A remote MCP on the cluster is stateless).
 
 **Shared things belong to no app.** The namespace, persistent volumes and the `vault-dev` Secret are created by a pre-deploy hook, not listed in one app's manifest, so stopping one app (Ctrl-C) never deletes what another uses.
 
@@ -103,7 +103,7 @@ deploy:                              # no kubeContext: the current one (Dev mach
   kubectl:
     hooks:
       before:
-        - host: { command: ["bash", "scripts/dev-setup.sh"] }
+        - host: { command: ["bash", "../k8s/dev-setup.sh"] }   # the project's shared hook
 portForward:
   - { resourceType: service, resourceName: <project>-<app>, namespace: <project>, port: <port>, localPort: <port> }
 ```
@@ -113,13 +113,13 @@ portForward:
   - `dev`: `skaffold dev --no-prune`. Ctrl-C removes the workload and keeps the image.
   - `dev_keep`: `skaffold dev --no-prune --cleanup=false`. Ctrl-C leaves the workload running.
   - `delete`: `skaffold delete`. Removes a workload left running; the image stays.
-  - `start`: `skaffold run --no-prune`, detached, for an always-on shared service (local users).
+  - `start`: `skaffold run --no-prune`, detached, for an always-on shared service (the dev users service).
   There is no `prod` routine.
 - **`localPort`** comes from the port registry in the `system` skill: it's a port on the Mac, so it must be unique across projects.
 
 ## `k8s/dev-setup.sh`: the pre-deploy hook
 
-Runs before each Skaffold deploy, on the local cluster only (`kubectl --context "$SKAFFOLD_KUBE_CONTEXT"`). Copy `tags/k8s/dev-setup.sh` (project root, shared by every app of the project). It:
+Runs before each Skaffold deploy, on the dev cluster Skaffold is deploying to (`kubectl --context "$SKAFFOLD_KUBE_CONTEXT"`); it refuses the prod context. Copy `tags/k8s/dev-setup.sh` (project root, shared by every app of the project). It:
 
 1. creates the namespace (idempotent: `create --dry-run=client -o yaml | apply`);
 2. creates any persistent volume claim the app keeps across runs;
@@ -127,11 +127,15 @@ Runs before each Skaffold deploy, on the local cluster only (`kubectl --context 
 
 An app with no secrets and no volume only needs the namespace, as an inline hook (see `portal/portal/skaffold.yaml`).
 
+## `k8s/remove.sh`: take the project off a dev cluster
+
+The root `meta.json` has a `remove` routine (`bash k8s/remove.sh`). It deletes the project's namespace on the current kube context, and with it every app, Service, Secret and volume; it refuses the context `ghostmind`. Copy `tags/k8s/remove.sh`. The per-app `delete` routine removes one workload; `remove` clears the whole project, for example before moving it to another dev machine. A project lives on one dev cluster at a time: two would fight over the same dev tunnel.
+
 ## Shared users service
 
 Apps that need users read `DB_USERS_ENDPOINT` from Vault like any other value; nothing in the app changes between environments.
 
-- **Dev:** the local users service (users repo, `start` routine) at `http://state.users.svc.cluster.local:5090/v1/graphql`, stored in `ghostmind/global/users#DB_USERS_ENDPOINT`, on the dev database `users_state_local`. A new app gets local users with no setup. Dev can never read the prod address (`dev-session` denies `…/prod`).
+- **Dev:** the users service on the dev cluster (users repo, `start` routine) at `http://state.users.svc.cluster.local:5090/v1/graphql`, stored in `ghostmind/global/users#DB_USERS_ENDPOINT`, on the dev database `users_state_local`. A new app gets dev users with no setup. Dev can never read the prod address (`dev-session` denies `…/prod`).
 - **Prod:** the same Service name on port 5080, in `ghostmind/global/users/prod#DB_USERS_ENDPOINT`.
 
 ## Dev machines: the kube context and the Docker context travel together

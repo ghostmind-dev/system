@@ -27,7 +27,8 @@ Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define t
 6. **Convert Docker, scripts and meta** to `new-app` → kubernetes.md (image and entrypoint from docker.md). Write `k8s/<app>.yaml`, `k8s/<app>.dev.yaml` and `skaffold.yaml`; Service names keep the old container names (`<project>-<app>`), so addresses don't change; drop the `traefik/` app and route the tunnel straight to each Service. The points below still apply, the Compose ones only to an app that stays on Compose:
    - `compose.local.yaml` → `compose.dev.yaml` (and `ingress.local.yaml` → `ingress.dev.yaml`), with relative paths and no `env_file`;
    - keep `-p <project>` identical to the legacy compose project name, so named volumes (`<project>_tunnel-creds`) carry over;
-   - the varlock entrypoint, with the binary that matches the base image;
+   - the varlock entrypoint, with the binary that matches the base image; on the cluster the prod branch `exec`s the app (no `while true` loop: that was for the single-use login of a Compose host);
+   - the project's `k8s/dev-setup.sh` and `k8s/remove.sh` at the root, with the `remove` routine in the root `meta.json`;
    - `scripts/*.ts` → `scripts/*.sh`. A routine that needs `cd`, `&&` or quotes becomes a script, because `run routine` has no shell;
    - Terraform → the Terraform block in `new-app` → blocks.md. `plan` must show no changes;
    - **a remote MCP moving to the cluster becomes stateless** (`new-app` → blocks.md): an in-memory `transports`/session map or `@modelcontextprotocol/sdk` 1.x is drift. Run `npx @modelcontextprotocol/codemod@latest v1-to-v2 .`, rebuild the entry point on `createMcpHandler` + `toNodeHandler` as in `potion/mcp/app/src/main.ts`, set `replicas: 2` in the dev manifest, and prove it by deleting the serving pod mid-session. Upstream guides: `docs/migration/upgrade-to-v2.md` and `support-2026-07-28.md` in `modelcontextprotocol/typescript-sdk`;
@@ -45,4 +46,4 @@ Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define t
 - **zsh `path`:** in zsh, `for path in …` overwrites `$PATH`, and every command after it fails with "command not found". Use another variable name, or put loops in a `bash` script.
 - **Hashing through varlock:** `varlock run` redacts the child's stdout, so hash inside the child (`secrets` skill, Debugging).
 - **Copy-paste leftovers** to fix while in the app: wrong meta names, `container_shell` pointing at another project, stale `.env.template`.
-- **potion specifics, when its turn comes:** its tunnel keeps the Cloudflare `cert.pem` in plain text in `potion/tunnel/.env.local` (use `ghostmind/global/cloudflare`), and its MCP OAuth is replaced by format's (`system` skill, building blocks).
+- **What is left to migrate:** every product runs on the cluster. The remaining legacy pieces are potion's `bucket` (`.env.base`, `.env.local`, `.env.prod`, `run` scripts: convert like `tags/bucket`), leftover `.env.base` / `.env.template` files in `potion/chrome` and `potion/native`, and potion's MCP OAuth, to be replaced by format's (`system` skill, building blocks).

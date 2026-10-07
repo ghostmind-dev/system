@@ -1,12 +1,12 @@
 # Deploying to a single host with Compose (not the default)
 
-Use this only for an app that is **not** on the k3s cluster: a standalone server, or a project not yet moved to the cluster. New apps deploy to the cluster (`deploy` skill). This flow was proven in prod by tags and users.
+Use this only for an app that **can't** go on the k3s cluster: a standalone server. Every product deploys to the cluster (`deploy` skill), and none uses this flow today. It was proven in prod by tags and users before they moved.
 
 **Model:** push to `main` → the app's workflow → CI mints a **single-use** Vault login for that app → hands it to the host over stdin into RAM → `git pull` → `bash scripts/prod.sh` → a health check proves the container restarted and serves → the login files are wiped.
 
 **Where secrets exist:** only in the memory of running containers. They are never on disk, never in `docker inspect`, never in CI logs. At rest the server holds **no usable credential**.
 
-**Reference, proven in prod:** `/Volumes/Projects/ghostmind/tags` (`.github/workflows/_deploy.yaml`, `city.yaml`, `redeploy-all.yaml`; first green run 2026-09-30). Legacy projects (potion, users, portal) still deploy the old way (`run vault kv export` → `/run/secrets` → `env_file`, CI with an admin token) until migrated.
+**Reference:** the git history of `/Volumes/Projects/ghostmind/tags` (`.github/workflows/_deploy.yaml`, `city.yaml`, `redeploy-all.yaml`; first green run 2026-09-30) and of `users`. Both repos now hold the cluster workflows instead.
 
 **CI never needs an admin or read token.** When a deploy fails with "permission denied", the fix is the policy (see *Validate before merging*), never a broader token in GitHub secrets.
 

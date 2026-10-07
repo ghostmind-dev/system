@@ -1,5 +1,7 @@
 # Debug access: credentials that live only as long as your session
 
+For a **standalone Compose host**. On the cluster there is no server to log in to: debugging prod is read-only `kubectl --context ghostmind -n <project>` (`get`, `describe`, `logs`, `port-forward`), and a fix goes through a merge to main (`deploy` skill).
+
 Goal: when nobody is debugging, the server holds **no Vault token and no GitHub token**. When you SSH in to debug, you bring short-lived credentials with you. They exist only in that shell's memory and are revoked the moment you exit.
 
 > Status: design, to be built and verified with the first prod deploy. Implement it as `scripts/debug.sh` in this skill and replace this note.

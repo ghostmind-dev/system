@@ -1,7 +1,7 @@
 {
   "id": "H8eW8uubGfEY",
   "name": "system",
-  "type": "app",
+  "type": "project",
   "routines": {
     "init_herdr": "run herdr init system",
     "attach_herdr": "run herdr attach system",

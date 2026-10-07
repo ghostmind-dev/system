@@ -50,7 +50,7 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 APP_ENV=dev
 # @type=url
 VAULT_ADDR=
-# dev: a short-lived dev-session token (the Secret vault-dev in the local cluster), or your shell's token
+# dev: a short-lived dev-session token (the Secret vault-dev in the dev cluster), or your shell's token
 # for host scripts. prod: empty, the login below is used instead.
 # @type=vaultToken @sensitive @required=false
 VAULT_TOKEN=
@@ -83,12 +83,12 @@ OPENROUTER_API_KEY=vaultSecret("ghostmind/global/openrouter")
 - **`if()` is lazy**: the branch for the other environment never runs, so the pod-only `exec("cat /var/run/secrets/vault/token")` and prod-only Vault paths are never touched in dev.
 - **Who logs in where:**
   - *prod pod:* its service-account token, through `auth/k8s`, role `<project>-<app>` (set up in `new-app` → kubernetes.md);
-  - *dev pod:* a 12-hour `dev-session` token that the app's `scripts/dev-setup.sh` puts in the local Secret `vault-dev`. That policy reads dev paths only, never `…/prod`. Never the user's own token;
+  - *dev pod:* a 12-hour `dev-session` token that the project's `k8s/dev-setup.sh` puts in the Secret `vault-dev` of the dev cluster. That policy reads dev paths only, never `…/prod`. Never the user's own token;
   - *host scripts on the Mac:* the shell's `VAULT_TOKEN`.
 - An app deployed to a Compose host instead of the cluster uses AppRole lines here (`deploy` → compose-host.md).
 - **Use `if(forEnv(prod), …)`, not `remap()`.** `remap($APP_ENV, dev=a, prod=b)` returns the literal environment name.
 - **`vaultSecret("path#KEY")`** reads a Vault key whose name differs from the item. Use it instead of renaming app code or duplicating a value in Vault.
-- Separate `.env.dev` / `.env.prod` files also work (format uses them). New apps use the single schema.
+- Separate `.env.dev` / `.env.prod` files also work, but no project uses them any more: one schema per app.
 
 Rules:
 - Mark every secret `@sensitive` so varlock redacts it in output and logs.
@@ -98,7 +98,10 @@ Rules:
 - Paths are `ghostmind/project/...` (singular), and key names match the schema item exactly unless you use `path#KEY`. When the user stores a third-party secret, hand them the exact `vault kv patch` command to paste.
 - Derived values use functions: `DATABASE_URL=concat("postgres://", $PGUSER, ":", $PGPASSWORD, "@", $PGHOST, "/", $DB_NAME)`. Look anything else up in the docs (`https://varlock.dev/reference/functions/`) rather than guessing.
 - **Never rename or remove a shared key** (anything under `ghostmind/global/`) without first grepping every `.env.schema` under `/Volumes/Projects` that reads it, and asking the user. Add the new key alongside instead; remove the old one only when nothing reads it.
-- **Cloudflare tunnel certs are per zone; name the key after the domain:** `CLOUDFLARED_GHOSTMIND_APP` (`global/cloudflare`, every dev tunnel), `CLOUDFLARED_<DOMAIN>` for a product's own zone. The older `CLOUDFLARED_CREDS` (in `global/cloudflare` and `global/cloudflare/prod`) is still read by format and ensemble.
+- **Every Cloudflare credential is named after its domain, never a generic name.** A tunnel certificate is valid for one zone, so the key says which: `CLOUDFLARED_<DOMAIN>`, the domain in capitals with dots as underscores.
+  - *dev zone:* `ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`, read by every dev tunnel.
+  - *prod zones:* under `/prod`, which a dev session cannot read: `ghostmind/global/cloudflare/prod#CLOUDFLARED_GHOSTMIND_DEV`, and `…/prod#CLOUDFLARED_<DOMAIN>` for a product's own zone (`CLOUDFLARED_POTION_RUN`). Only `k8s/prod-init.sh` reads these, to create the prod tunnel (`deploy` skill); no pod does.
+  - *legacy:* `CLOUDFLARED_CREDS` (in `global/cloudflare` and `global/cloudflare/prod`) doesn't say its zone. format and ensemble still read it; add the domain-named key alongside, and remove the old one only when nothing reads it.
 
 ## Using it
 
