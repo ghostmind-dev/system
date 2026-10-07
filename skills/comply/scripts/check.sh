@@ -16,7 +16,7 @@ say() { # level rule path message
 has() { grep -Eq -- "$1" "$2" 2>/dev/null; }
 
 # ---------- root layout ----------
-ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|\.history|node_modules)$'
+ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|k8s|shared|\.dockerignore|\.history|node_modules)$'
 is_service() { [ -d "$1" ] && { [ -f "$1/meta.json" ] || [ -d "$1/docker" ] || [ -f "$1/.env.schema" ] || [ -d "$1/app" ]; }; }
 SERVICES=()
 for p in "$ROOT"/* "$ROOT"/.[!.]*; do
@@ -24,7 +24,7 @@ for p in "$ROOT"/* "$ROOT"/.[!.]*; do
   n=$(basename "$p")
   if is_service "$p"; then SERVICES+=("$p"); continue; fi
   echo "$n" | grep -Eq "$ALLOWED_ROOT" && continue
-  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/ and service folders)"
+  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/, k8s/, shared/ with its .dockerignore, and service folders)"
 done
 [ ${#SERVICES[@]} -eq 0 ] && is_service "$ROOT" && SERVICES=("$ROOT")   # a single-service folder passed directly
 
@@ -119,6 +119,8 @@ for S in "${SERVICES[@]}"; do
       has 'jwtAuthPath=k8s' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=k8s/oidcToken to @initHcpVault and the VAULT_JWT line (secrets skill)"
       has 'ts\.net' "$PRODM" && say WARN k8s "$PRODM" "prod VAULT_ADDR should be Vault's private address (http://10.0.0.7:8200)"
     fi
+    [ -f "$D/entrypoint.sh" ] && has 'while true' "$D/entrypoint.sh" && \
+      say WARN k8s "$D/entrypoint.sh" "prod restart loop: that is for a Compose host's single-use login. On the cluster exec the app and let Kubernetes restart the pod (new-app docker.md)"
     [ -n "$PRODM" ] && has 'VAULT_TOKEN|secretKeyRef' "$PRODM" && say FAIL k8s "$PRODM" "no token or secret handed to a prod pod: it logs in to Vault with its service account"
     if ls "$K"/*.dev.yaml >/dev/null 2>&1; then
       SK="$S/skaffold.yaml"
@@ -130,7 +132,8 @@ for S in "${SERVICES[@]}"; do
       fi
       # an app that builds from the repo root (skaffold context: .., for a shared/ folder) uses the root .dockerignore
       DI="$S/.dockerignore"; [ -f "$SK" ] && has 'context:\s*\.\.' "$SK" && DI="$ROOT/.dockerignore"
-      [ -f "$DI" ] && has 'node_modules' "$DI" || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist (at the repo root for an app that builds from it): the Mac's node_modules would hide the image's own"
+      # only an image that installs dependencies needs one (not cloudflared or Hasura)
+      [ ! -f "$S/app/package.json" ] || { [ -f "$DI" ] && has 'node_modules' "$DI"; } || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist (at the repo root for an app that builds from it): the Mac's node_modules would hide the image's own"
       [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
       ls "$K"/*.dev.yaml | while read -r dm; do
         grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"

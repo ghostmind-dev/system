@@ -14,10 +14,10 @@ The system is **a few plain tools plus reference apps**. There is no framework t
 | Pillar | Tool | Skill |
 |---|---|---|
 | **Secrets** | varlock `.env.schema` pointing into Vault (`ghostmind/` KV v2 mount) | `secrets` |
-| **Run** | **Kubernetes, in prod and in dev**: the k3s cluster on Hetzner, and OrbStack's local cluster with Skaffold and hot reload on the Mac. The default for most apps (about 80%) | `new-app` |
+| **Run** | **Kubernetes, in prod and in dev**: the k3s cluster on Hetzner, and an OrbStack cluster in dev (this Mac's, or another Mac's over Tailscale) with Skaffold and hot reload. Every Ghostmind product runs this way | `new-app` |
 | **Deploy** | GitHub Actions on merge to main: build the image, log in to the cluster with the run's OIDC token, apply by digest | `deploy` |
 
-**Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception, not the default.
+**Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception: no product under `/Volumes/Projects/ghostmind` holds a compose file any more (Vault's own server, outside the cluster, is the one Compose host). Start from Kubernetes, and reach for Compose only when the target can't be the cluster.
 
 Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`.
 
@@ -47,7 +47,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 
 ```
 <project>/                       one git repo = one product
-  meta.json                      transitional: name, routines, herdr workspace
+  meta.json                      type project: name, tags, groups, routines, herdr workspace
   CLAUDE.md  README.md  .gitignore
   .github/workflows/             _deploy-k8s.yaml (reusable) + deploy.yaml (one job per app)
   <app>/                         one folder per service (ui, mcp, api, worker, db, tunnel, mac, cli…)
@@ -56,12 +56,15 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
     docker/  Dockerfile  entrypoint.sh
     k8s/     <app>.yaml  <app>.dev.yaml      prod and dev manifests
     skaffold.yaml                dev on the current kube context (names no cluster)
-    scripts/                     dev-setup.sh (dev pre-deploy hook), migrate.sh, create-db.sh…
-    meta.json                    routine "dev": "skaffold dev" + herdr tab for this app
+    .dockerignore                node_modules, .next, dist
+    scripts/                     the app's own verbs: migrate.sh, create-db.sh…
+    meta.json                    routines dev, dev_keep, delete (skaffold) + herdr tab for this app
+  k8s/                           the project's scripts: dev-setup.sh (pre-deploy hook shared by the apps), remove.sh, prod-init.sh (one-time prod setup, `deploy` skill)
+  shared/                        only when several backends share TypeScript; the apps then build from the root
   plugin/                        the product's Claude plugin: .mcp.json + skills (see new-app → blocks.md)
 ```
 
-**The root holds only `README.md`, `CLAUDE.md`, `meta.json`, `.gitignore`, `.github/` and, when the product ships a Claude plugin, `.claude-plugin/marketplace.json`.** Every app, including non-web ones (a Swift app, a CLI), lives in its own service folder. Nothing app-specific (`package.json`, `src/`, `test/`) stays at the root.
+**The root holds only `README.md`, `CLAUDE.md`, `meta.json`, `.gitignore`, `.github/`, `k8s/` (the project's dev scripts), `shared/` with a root `.dockerignore` when backends share code, and, when the product ships a Claude plugin, `plugin/` and `.claude-plugin/marketplace.json`.** Every app, including non-web ones (a Swift app, a CLI), lives in its own service folder. Nothing app-specific (`package.json`, `src/`, `test/`) stays at the root.
 
 `docker/compose.*.yaml` exists only when the app isn't on Kubernetes. One project = one namespace, named after the project, in dev and prod. Apps reach each other by Service name (`<project>-<app>:<port>`), the same name the container had under Compose.
 
@@ -73,27 +76,29 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 |---|---|---|
 | **Kubernetes app, dev and prod** | The default for a new app | `/Volumes/Projects/ghostmind/portal` (`portal/` = ui, `tunnel/`): `k8s/<app>.yaml` + `<app>.dev.yaml`, `skaffold.yaml` per app with hot reload, no Compose. Details: `new-app` → kubernetes.md |
 | **Prod deploy to the cluster** | Every app on k3s | `/Volumes/Projects/ghostmind/portal/.github/workflows/` (`_deploy-k8s.yaml`, `deploy.yaml`); also `tags` (five apps) |
-| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/ghostmind/portal/portal/skaffold.yaml` (`sync: infer`), `portal/tunnel/scripts/dev-setup.sh` (namespace, volume, dev-session Vault token) |
+| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/ghostmind/portal/portal/skaffold.yaml` (`sync: infer`), `/Volumes/Projects/ghostmind/tags/k8s/dev-setup.sh` (namespace, volume, dev-session Vault token) and `k8s/remove.sh` |
 | **Vault login by service account** | A pod that reads secrets | `/Volumes/Projects/ghostmind/tags/city/k8s/city.yaml` + `.env.schema`; `portal/tunnel` |
 | **Tunnel without Traefik** | Something must be public | `/Volumes/Projects/ghostmind/portal/tunnel`, `/Volumes/Projects/ghostmind/tags/tunnel` |
 | Cluster and node setup | Adding a node or a project to the cluster | `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` |
-| Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/playground/format/mcp` (Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) for the OAuth; `/Volumes/Projects/ghostmind/potion/mcp` (`app/src/main.ts`) for the transport: **stateless on the cluster**, MCP SDK v2, no sessions (`new-app` → blocks.md) |
+| Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/ghostmind/format/mcp` (Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) for the OAuth; `/Volumes/Projects/ghostmind/potion/mcp` (`app/src/main.ts`) for the transport: **stateless on the cluster**, MCP SDK v2, no sessions (`new-app` → blocks.md) |
 | **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/ghostmind/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`); smaller: `/Volumes/Projects/ghostmind/tags/plugin` |
-| Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/playground/format/ui` (static React + TanStack, Vite) |
+| Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/ghostmind/format/ui` (static React + TanStack, Vite) |
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/ghostmind/potion/ui` (Next.js + next-auth Google) |
-| Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/playground/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
-| Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/playground/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
+| Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/ghostmind/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
+| Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/ghostmind/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/ghostmind/tags/bucket` (Terraform in a container through varlock) |
-| Database | The product has state | `/Volumes/Projects/ghostmind/tags/db` (Hasura on the cluster, migrations applied in the container); `/Volumes/Projects/playground/format/db` for `create-db.sh` |
-| Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/ghostmind/potion/worker` |
+| Database | The product has state | `/Volumes/Projects/ghostmind/tags/db` (Hasura on the cluster, migrations applied in the container); `/Volumes/Projects/ghostmind/format/db` for `create-db.sh` |
+| Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/ghostmind/potion/worker` (a Deployment and Service with no tunnel route) |
 | Compose + Cloud Run (not on the cluster) | A managed target, a script project | `/Volumes/Projects/playground/inference` (bash + gcloud, varlock on the host) |
-| Compose on a standalone host | An app that can't go on the cluster | `deploy` → compose-host.md; `/Volumes/Projects/ghostmind/users` |
-| iOS / Expo | Mobile | `/Volumes/Projects/ghostmind/potion/native` |
+| Shared service, always on in dev | A service other products call | `/Volumes/Projects/ghostmind/users` (`start` routine, its own dev database) |
+| Stateful app on a volume, tailnet only | An internal tool | `/Volumes/Projects/ghostmind/admin` (SQLite on a volume, Tailscale Serve) |
+| Compose on a standalone host | An app that can't go on the cluster | `deploy` → compose-host.md. No product uses it today: tags and users did before moving to the cluster (their git history) |
+| iOS / Expo | Mobile | `/Volumes/Projects/ghostmind/tags/native` (varlock, signing and creds scripts); older: `potion/native` |
 | Raycast extension | Mac launcher tools | `/Volumes/Projects/labo/projects` |
-| Swift macOS app | Native Mac | `/Volumes/Projects/playground/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
+| Swift macOS app | Native Mac | `/Volumes/Projects/ghostmind/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Python CLI/package | Tooling | `/Volumes/Projects/labo/theme` |
 
-`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). The potion references predate varlock: copy their **app code and structure**, and take secrets, manifests and deploy from the `secrets`, `new-app` and `deploy` skills instead. format's and potion's `traefik/` and Compose files are not the pattern any more. They also use the old environment name: `compose.local.yaml`, `ingress.local.yaml` and `.env.local` become `compose.dev.yaml`, `ingress.dev.yaml` and `.env.dev`. **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead. Its stateless transport (`app/src/main.ts`) is the reference for every MCP on the cluster.
+`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). Every project in the table runs on Kubernetes in dev and prod, with no Traefik and no compose file, so manifests, Skaffold files and workflows can be copied from any of them; `portal` and `tags` are the cleanest. What is still legacy: potion's `bucket` (`.env.base`, `run` scripts) and leftover `.env.base` / `.env.template` files in `potion/chrome` and `potion/native`; several entrypoints (portal's tunnel, tags, format, users) still loop in prod, a Compose habit (`new-app` → docker.md). **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead. Its stateless transport (`app/src/main.ts`) is the reference for every MCP on the cluster.
 
 ## Naming
 
@@ -131,7 +136,7 @@ Projects on separate subdomains (`mcp.tags.city`, `format-mcp.ghostmind.app`, po
 
 ## Ports
 
-Every port a project uses **on the Mac** must be unique across all projects, so any two can run side by side: Skaffold's `localPort` forwards, a Compose `ports:`, and tool ports such as the Hasura console. Inside the cluster a port only has to be unique within its project, but keep one number per app everywhere (container, Service, forward) so addresses read the same in dev and prod.
+Every port a project uses **on the Mac** must be unique across all projects, so any two can run side by side: Skaffold's `localPort` forwards, tool ports such as the Hasura console, and a Compose `ports:` where one exists. Inside the cluster a port only has to be unique within its project, but keep one number per app everywhere (container, Service, forward) so addresses read the same in dev and prod.
 
 **Pick from the registry below**, and add the new project's row in the same change. Then confirm nothing is listening: `lsof -iTCP -sTCP:LISTEN -nP | grep :<port>`.
 
@@ -140,25 +145,29 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | portal | ui 5096 |
 | tags | city 5085 · db 5086 · mcp 3085 · native 3086 |
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
-| users | db 5080 (prod: consumers hardcode it) / 5090 (dev) · Hasura console 9727 / 9728 |
-| potion (legacy) | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 · traefik 80 / 8080 |
-| noice (legacy) | ui 5001 · traefik 80 / 8080 |
+| users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
+| potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
+| noice | ui 5065 |
+| admin | dashboard 5095 |
+| magneto | api 3035 · db 5035 · ui 5036 |
+| together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
 | vault | 8200 |
 
-Legacy rows collide with each other: renumber them when the project is migrated. For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
+For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
 
-## meta.json and `run` (transitional)
+## meta.json and `run`
 
-`run` and `meta.json` are being retired. Until then only two parts are live:
+`run` operates projects on the Mac, and every folder's `meta.json` is what it reads. Its own skill (the `run` plugin, shipped from the `run` repo) holds the detail; load it for anything beyond this summary.
 
-- `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` block. Fetch the schema before editing it: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
+- `run projects`: the dashboard. Every folder whose `meta.json` has `type: "project"`, with its herdr workspace, git branch and uncommitted changes; workspaces are opened and closed from it, alone or by tag or group. This is where most of the work happens. To ask what exists or what is running, use `run projects --json` (add `--panes` for what each pane runs) rather than reading folders.
 - `run routine <name>`: runs a `routines` entry. It splits on spaces **without a shell**, so pipes, quotes and redirects belong inside a script.
+- `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` blocks. `init --start` also runs the routine each pane names. Fetch the schema before editing a `herdr` block: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
 
-A new meta.json carries only `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `routines`, `herdr`.
+A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. A herdr pane may name the `routine` it usually runs.
 
-The old opinionated tooling is gone from new work: no `run` wrappers around Terraform, Compose or Docker.
+**Removed in run 0.9.0, they no longer exist:** `run custom`, `run vault kv`, `run docker`, `run terraform`, `run tmux`, `run meta`, `run action`, `run misc`, and the meta.json keys `compose`, `docker`, `terraform`, `custom`, `tmux`, `template`, `global`. A project still calling one is converted with the `migrate` skill: its scripts become `scripts/*.sh`.
 
-**Deprecated. They still work for existing projects, but new work never uses them:** `run custom`, `run vault kv`, `--cible`/`--env` env loading, `.env.base`/`.env.local`, `run docker`, `run terraform`, `run tmux`, `run meta`, `run action`, and the meta.json keys `compose`, `docker`, `terraform`, `custom`, `secrets`, `tmux`, `template`, `global`. Leave existing projects on them until they are migrated with the `migrate` skill.
+**Still present but on its way out:** `--cible`/`--env` env loading with `.env.base`/`.env.local`, and the `secrets` key. New work never uses them.
 
 ## Environment
 

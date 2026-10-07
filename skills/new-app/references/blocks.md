@@ -2,16 +2,16 @@
 
 ## One auth system: the MCP server is the product's OAuth server
 
-The most common product shape is a remote MCP, a web app and often a native app, all behind one Google login. Reference: `/Volumes/Projects/playground/format` (`mcp`, `ui`, `mac`).
+The most common product shape is a remote MCP, a web app and often a native app, all behind one Google login. Reference: `/Volumes/Projects/ghostmind/format` (`mcp`, `ui`, `mac`).
 
-- **The MCP server is the authorization server.** It is remote (streamable HTTP over the tunnel), not stdio: Claude clients connect by URL and go through OAuth. Identity is delegated to Google (a Google proxy). Copy `/Volumes/Projects/playground/format/mcp/app/src/auth/oauth.ts`, which gets three things right:
+- **The MCP server is the authorization server.** It is remote (streamable HTTP over the tunnel), not stdio: Claude clients connect by URL and go through OAuth. Identity is delegated to Google (a Google proxy). Copy `/Volumes/Projects/ghostmind/format/mcp/app/src/auth/oauth.ts`, which gets three things right:
   - **PKCE is enforced**: the client's `code_challenge` is passed to Google and the `code_verifier` forwarded at `/token`, so Google checks it;
   - **redirect URIs are allow-listed**: loopback plus configured https prefixes, so there's no open redirect;
   - **`state` is HMAC-signed**, with a 15-minute expiry.
 
   `potion/mcp` predates this and has none of the three; don't copy its OAuth. `PUBLIC_DOMAIN` must be the public host (`<app>.ghostmind.dev`), and the OAuth endpoints and `/.well-known/oauth-*` must route to this server on that host (`system` skill, Domains), or the redirects and discovery point at the wrong place.
-- **The web app signs in through the same server** (OAuth + PKCE), so there is one auth system for web, MCP and native. The default web app is static React + TanStack on Vite: `/Volumes/Projects/playground/format/ui`. Use Next.js + next-auth (`potion/ui`) only when the app needs server rendering or its own API routes.
-- **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/playground/format/mac/app/Sources/Format/Account.swift`.
+- **The web app signs in through the same server** (OAuth + PKCE), so there is one auth system for web, MCP and native. The default web app is static React + TanStack on Vite: `/Volumes/Projects/ghostmind/format/ui`. Use Next.js + next-auth (`potion/ui`) only when the app needs server rendering or its own API routes.
+- **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/ghostmind/format/mac/app/Sources/Format/Account.swift`.
 - **One Google OAuth client per product.** `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` live once at `ghostmind/project/<project>/auth` (singular `project`), and every schema points there. Shared signing secrets (`HASURA_GRAPHQL_JWT_SECRET`, the state HMAC key) live there too.
 
 ## A remote MCP on the cluster is stateless
@@ -65,7 +65,7 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 
 ## Bring-your-own OpenRouter
 
-When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/playground/format`, and `potion/agent/ai-connection.ts` for the same pattern.
+When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/ghostmind/format`, and `potion/agent/ai-connection.ts` for the same pattern.
 
 ## Tunnel (only if something is public)
 
@@ -75,7 +75,7 @@ A cloudflared app per project sends each hostname **straight to its app's Servic
 - **Dev** uses the `ghostmind.app` account certificate (`ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`) to create the dev tunnel and route DNS.
 - **Several services on one host** (`/mcp`, `/api`, the UI): `path:` rules in the ingress file, most specific first.
 
-Traefik is no longer part of the pattern. Projects that still have a `traefik/` app (format, potion, noice) drop it when they move to Kubernetes.
+Traefik is no longer part of the pattern, and no project has a `traefik/` app any more.
 
 ## Terraform (cloud resources: buckets, service accounts)
 
@@ -92,4 +92,4 @@ See the `database` skill. The app's schema points `DATABASE_URL` (or `HASURA_GRA
 
 ## Worker / internal service
 
-Reference: `/Volumes/Projects/ghostmind/potion/worker`. No `ports:`, reached by container name from sibling apps. Add `mem_limit` / `pids_limit` when it processes untrusted input.
+Reference: `/Volumes/Projects/ghostmind/potion/worker` (`k8s/worker.yaml`). A Deployment and a Service like any app, with no route in the tunnel: sibling apps reach it at `http://<project>-worker:<port>`. Set its memory limit from what it really uses, and keep the prod manifest's hardening (read-only root filesystem, no capabilities) when it processes untrusted input.

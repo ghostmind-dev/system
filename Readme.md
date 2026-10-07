@@ -26,6 +26,6 @@ New apps replicate **reference apps** (portal for how an app is packaged and run
 
 ## Status
 
-- Kubernetes is the default since 2026-10-03. Live in prod on the cluster: `ghostmind/portal` and `ghostmind/tags`, both also on Kubernetes in dev with hot reload (tags since 2026-10-04).
-- Still to move: format, potion, users and noice to the cluster.
-- The earlier Compose-on-a-host flow (single-use AppRole logins) is kept as a reference for apps that aren't on the cluster.
+- Kubernetes is the default since 2026-10-03, and every product is on it. Live in prod on the cluster: portal, tags, format, potion, noice, users and admin, all on Kubernetes in dev too, with hot reload. magneto and together run on Kubernetes in dev and are not in prod yet.
+- No product holds a compose file any more. Vault runs on its own server, outside the cluster.
+- The earlier Compose-on-a-host flow (single-use AppRole logins) is kept as a reference for a target that can't be the cluster.

@@ -4,7 +4,7 @@
 
 **The Compose sections are the exception.** Most apps run on Kubernetes in dev and prod ([kubernetes.md](kubernetes.md)) and have no compose file at all. Use Compose only when the target isn't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a standalone host.
 
-> Status: the image pattern is live in prod (portal, tags). If something here fails in practice, fix this file.
+> Status: the image pattern is live in prod for every product on the cluster. The Compose sections have no live user among the products. If something here fails in practice, fix this file.
 
 ## docker/Dockerfile
 
@@ -37,12 +37,12 @@ WORKDIR /usr/app
 ENTRYPOINT ["varlock", "run", "--", "/entrypoint.sh"]
 ```
 
-**Every image builds on both arm64 and amd64.** Dev runs on the Mac (arm64) and prod on Hetzner (amd64). Each side builds natively (`docker compose up --build` on the machine that runs it), so there is no cross-compiling, but the same Dockerfile must work on both:
+**Every image builds on both arm64 and amd64.** Dev runs on a Mac (arm64): Skaffold builds on the Docker daemon of the dev cluster's machine. Prod runs on Hetzner (amd64): the deploy workflow builds on a GitHub runner and pushes to GHCR. The same Dockerfile must work on both:
 - Base images must be published for both architectures (`node`, `alpine`, `hasura/graphql-engine`, `cloudflare/cloudflared` are). Check a new one with `docker manifest inspect <image> | grep architecture`.
 - Anything downloaded picks its architecture from `TARGETARCH`, as the varlock line above does. Never hardcode `x64`, `amd64` or `x86_64` in a URL.
-- No `platform:` pins in compose, and no `--platform` in `FROM`: forcing amd64 on the Mac falls back to slow emulation and hides arch bugs until prod.
-- Native npm/pip modules (`sharp`, `bcrypt`…) install inside the image, never copied from the Mac's `node_modules`. That's why dev mounts an anonymous `node_modules` volume over the bind mount.
-- If an image is ever pushed to a registry instead of built on the host, build both: `docker buildx build --platform linux/amd64,linux/arm64 --push`.
+- No `--platform` in `FROM` (and no `platform:` pin in a compose file): forcing amd64 on the Mac falls back to slow emulation and hides arch bugs until prod.
+- Native npm/pip modules (`sharp`, `bcrypt`…) install inside the image, never copied from the Mac's `node_modules`. That's what the required `.dockerignore` is for (under Compose: the anonymous `node_modules` volume over the bind mount).
+- CI builds amd64 + arm64 by default, or `platforms: linux/amd64` alone for heavy builds such as Next.js (`deploy` skill).
 
 **Match the varlock binary to the base image's C library.** The binary in `ghcr.io/dmno-dev/varlock` is built for musl (Alpine) and fails with `varlock: not found` on Debian/Ubuntu images (`node`, `hasura/graphql-engine`). On those, download the glibc release as above. On Alpine images the official one fits, with two libraries added:
 
@@ -52,13 +52,24 @@ COPY --from=ghcr.io/dmno-dev/varlock:1.21.0 /usr/local/bin/varlock /usr/local/bi
 RUN varlock install-plugin @varlock/hashicorp-vault-plugin@2.1.1
 ```
 
-References: `/Volumes/Projects/playground/format/db/docker/Dockerfile` (glibc) and `/Volumes/Projects/playground/format/tunnel/docker/Dockerfile` (Alpine).
+References: `/Volumes/Projects/ghostmind/format/db/docker/Dockerfile` (glibc) and `/Volumes/Projects/ghostmind/format/tunnel/docker/Dockerfile` (Alpine).
 
 Build context is the **service folder** (`..` from `docker/`). When the app imports shared code from the repo root (potion's `shared/`), make the context the repo root and copy that folder too, as `potion/mcp` does.
 
 ## docker/entrypoint.sh
 
-See the prod branch under compose.prod.yaml below: in prod, the entrypoint loops instead of `exec`.
+```sh
+#!/bin/sh
+# Runs under varlock: every variable in .env.schema is resolved.
+cd /usr/app/app
+if [ "$APP_ENV" = "prod" ]; then
+  exec npm run start
+else
+  exec npm run dev
+fi
+```
+
+**On Kubernetes both branches `exec`.** When the app dies the container exits, Kubernetes restarts it, and the new container logs in to Vault again with its service-account token. Restarts show in `kubectl get pods` and the probes mean something. Reference: `/Volumes/Projects/ghostmind/potion/mcp/docker/entrypoint.sh`. A prod loop (`while true; do … done`) belongs to a Compose host only, where the Vault login is single-use (compose.prod.yaml, below). Entrypoints carried over from that flow (portal's tunnel, tags, format, users) still loop; replace the loop with `exec` when the app is next touched.
 
 ## Compose only: docker/compose.dev.yaml
 
@@ -145,7 +156,7 @@ cd "$(dirname "$0")/.."
 docker compose -p <project> -f docker/compose.prod.yaml up --build -d --force-recreate
 ```
 
-When `compose.prod.yaml` binds the private or Tailscale address, `prod.sh` exports them first (reference: `/Volumes/Projects/ghostmind/users/state/scripts/prod.sh`):
+When `compose.prod.yaml` binds the private or Tailscale address, `prod.sh` exports them first (users did this before moving to the cluster; its git history has the file):
 
 ```bash
 export PRIVATE_IP=$(ip -4 -o addr show | awk '$4 ~ /^10\.0\.0\./ {sub(/\/.*/, "", $4); print $4; exit}')
@@ -157,16 +168,15 @@ export TAILSCALE_IP=$(tailscale ip -4)        # only if the Mac reaches this por
 
 ## meta.json
 
-On Kubernetes the routine is `"dev": "skaffold dev"` and there is no `prod` routine (prod deploys through CI only). The Compose form:
-
 ```json
 {
   "id": "<12 random chars>",
   "name": "<app>",
   "type": "app",
   "routines": {
-    "dev": "varlock run --include-internal -- bash scripts/dev.sh",
-    "prod": "bash scripts/prod.sh"
+    "dev": "skaffold dev --no-prune",
+    "dev_keep": "skaffold dev --no-prune --cleanup=false",
+    "delete": "skaffold delete"
   },
   "herdr": { "workspaces": [ { "label": "<project>", "tabs": [ {
     "label": "<app>", "prefix": false, "layout": "compact",
@@ -176,6 +186,8 @@ On Kubernetes the routine is `"dev": "skaffold dev"` and there is no `prod` rout
     ] } } ] } ] }
 }
 ```
+
+There is no `prod` routine: prod deploys through CI only (kubernetes.md says what each routine does). A Compose app has instead `"dev": "varlock run --include-internal -- bash scripts/dev.sh"` and `"prod": "bash scripts/prod.sh"`.
 
 `"prefix": false` keeps tab names to one word. Without it, `run herdr` prefixes a sub-app's tabs with the app name, so `mcp` becomes `mcp-mcp`.
 

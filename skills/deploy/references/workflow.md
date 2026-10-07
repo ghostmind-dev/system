@@ -2,7 +2,7 @@
 
 For apps deployed with [compose-host.md](compose-host.md). Cluster apps use `_deploy-k8s.yaml` (`deploy` skill).
 
-Three kinds of file, all in `.github/workflows/`. The working reference is `/Volumes/Projects/ghostmind/users/.github/workflows/` (tags used the same files before moving to the cluster; see its git history).
+Three kinds of file, all in `.github/workflows/`. No repo carries them today: users and tags used these files before moving to the cluster (see their git history).
 
 ## `_deploy.yaml`: one app's deploy (reusable)
 

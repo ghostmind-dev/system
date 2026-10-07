@@ -31,10 +31,8 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 
 ## Steps for a new project or app
 
-1. **Project access, once per project** (from the Mac): `bash /Volumes/Projects/ghostmind/start/host/k3s/setup.sh project <name>`. It creates the namespace and lets CI of `ghostmind-app/<name>` (main only) deploy into it and nowhere else (built-in role `edit`, that namespace only). It also needs the `TS_OAUTH_CLIENT_ID`/`TS_OAUTH_SECRET` repo secrets and the Vault `auth/k8s` roles (step 2). This changes the prod cluster: ask the user first.
-2. **Vault role per app that reads secrets:** policy `<project>-<app>` listing exactly the paths its `.env.schema` reads, and role `auth/k8s/role/<project>-<app>` bound to the app's service account (`new-app` → kubernetes.md). This changes Vault: ask first.
-3. **Manifests:** `<app>/k8s/<app>.yaml` per `new-app` → kubernetes.md.
-4. **Workflows:** copy `_deploy-k8s.yaml` unchanged from portal, and write one `deploy.yaml` for the project that calls it once per app, ordered with `needs:` (db → apps → tunnel), so the tunnel never sends traffic to a missing app:
+1. **Manifests:** `<app>/k8s/<app>.yaml` per `new-app` → kubernetes.md.
+2. **Workflows:** copy `_deploy-k8s.yaml` unchanged from portal, and write one `deploy.yaml` for the project that calls it once per app, ordered with `needs:` (db → apps → tunnel), so the tunnel never sends traffic to a missing app:
 
    ```yaml
    jobs:
@@ -48,23 +46,42 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
        uses: ./.github/workflows/_deploy-k8s.yaml
        …
    ```
-5. **Validate before merging:**
+3. **Prod init, once per project and again whenever an app or a prod secret path is added:** `bash k8s/prod-init.sh` at the project root (routine `prod_init`). Copy it unchanged from `/Volumes/Projects/ghostmind/magneto/k8s/prod-init.sh`: it takes everything from the project's own files, so nothing in it is project-specific. Without a flag it prints the plan and changes nothing; `--apply` does every `todo` line and is safe to run again.
+   - **Cluster:** the namespace (the `namespace:` of the manifests) and the RoleBinding `ci-deploy`, which lets CI of this repo (the git remote, `main` only) deploy into that namespace and nowhere else (built-in role `edit`). The repo and the project may have different names.
+   - **Vault:** for each app whose manifest sets `VAULT_JWT_ROLE`, the policy `<project>-<app>` (read-only on exactly the prod paths its `.env.schema` points to) and the role `auth/k8s/role/<project>-<app>` bound to its service account (`new-app` → kubernetes.md).
+   - **Tunnel:** the Cloudflare tunnel and DNS records named in `<app>/config/ingress.prod.yaml`, and its credentials JSON at `ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`. A host outside `ghostmind.dev` passes its zone's certificate: `CF_CERT=ghostmind/global/cloudflare/prod#CLOUDFLARED_<DOMAIN>` (the default is `CLOUDFLARED_GHOSTMIND_DEV` there; prod zone certificates stay under `/prod` so a dev session cannot read them).
+   - **Checks:** it warns on a prod Vault path a schema reads that does not exist yet, and on missing `TS_OAUTH_*` secrets or workflows. Fix every `WARN` before merging.
+
+   This changes the prod cluster, Vault and Cloudflare. **Show the user the plan once, then run `--apply`**: one confirmation for the whole setup, never one hand-run command per step.
+4. **Validate before merging:**
    - the schema resolves for prod from the Mac: `APP_ENV=prod VAULT_JWT_ROLE= varlock load --agent` in the app folder (your own token; the empty role skips the pod-only login);
    - the prod image builds: `docker build --platform linux/amd64 --build-arg APP_ENV=prod -f docker/Dockerfile .`;
    - the manifest is valid: `kubectl apply --dry-run=client -f k8s/<app>.yaml`;
    - a remote MCP is stateless (`new-app` → blocks.md): no session map in the code, and on dev with 2 replicas a tool call still answers after the serving pod is deleted. Prod runs 2 replicas with nothing pinning a client to a pod, so an in-memory session answers `Session not found` about every other request;
    - the container runs with a read-only root filesystem and as the manifest's user (run the prod image locally with `--read-only --tmpfs /tmp`).
-6. **Merge, then verify read-only:** the workflow is green; `kubectl -n <project> get pods` shows the new pods `Running` and ready with 0 restarts; the public URL answers; `kubectl -n <project> logs deploy/<app>` shows no varlock or Vault error. *Done when all four are observed.*
+5. **Merge, then verify read-only:** the workflow is green; `kubectl -n <project> get pods` shows the new pods `Running` and ready with 0 restarts; the public URL answers; `kubectl -n <project> logs deploy/<app>` shows no varlock or Vault error. *Done when all four are observed.*
 
 ## When a deploy fails
 
 - **Rollout timed out:** `kubectl -n <project> describe pod` and `logs` say why. A varlock error at start means a missing Vault path or a role/policy mismatch: fix the policy or the schema, never by handing the pod a token.
-- **OIDC login refused:** the project's namespace or RoleBinding is missing (step 1), or the run isn't on `main`.
+- **OIDC login refused:** the project's namespace or RoleBinding is missing (run `k8s/prod-init.sh`, step 3), or the run isn't on `main`.
 - **Image pull error:** the `ghcr` pull secret is refreshed on each deploy with a token that dies with the job. Nodes share images with each other, so this shows up only on an image no node has. Re-run the deploy.
 - **Rolling back:** revert the commit and merge. Don't `kubectl rollout undo` on prod.
 
 ## Not on the cluster
 
-- **A single host with Compose** (a standalone server, a project not yet moved): [compose-host.md](references/compose-host.md), with its workflows in [workflow.md](references/workflow.md) and the host checklist in [server.md](references/server.md).
+- **A single host with Compose** (a standalone server; no product uses this today): [compose-host.md](references/compose-host.md), with its workflows in [workflow.md](references/workflow.md) and the host checklist in [server.md](references/server.md).
 - **Cloud Run and other managed targets:** build with Compose locally, deploy with the provider's CLI from a script. Reference: `/Volumes/Projects/playground/inference`.
 - **Debugging on a server:** [debug-access.md](references/debug-access.md).
+
+## Possible improvement: no per-project setup (not done; today is `k8s/prod-init.sh`)
+
+The goal is "create the project, put its secrets in Vault, merge to main" with nothing run by hand. `prod-init.sh` exists because three things are made per project; each could be made once for every project. None of this is in place, and each item loosens a boundary the system keeps on purpose, so decide with the user before starting.
+
+| Per-project step today | Could become | One-time cost |
+|---|---|---|
+| Vault policy and role per app | One shared `auth/k8s` role and a templated policy: a pod reads `project/<its namespace>/…` and nothing else (the namespace and account name come from its service-account token) | Changes Vault auth for every project; the shared `global/*` secrets apps need (users, postgres) become readable by every prod pod, or stay as per-app grants |
+| Namespace and RoleBinding `ci-deploy` | A cluster admission rule letting a repo's CI create its own namespace and deploy only there | An admission policy to write and test; an error in it is wider than a hand-made binding |
+| Tunnel and DNS | The deploy workflow creates them through the Cloudflare API | A Cloudflare API token as an org secret in GitHub; the tunnel token lives in a cluster Secret instead of Vault |
+
+What stays manual either way: the project's real secrets (an OAuth client, a provider key) go into Vault first. Random ones (state secrets, encryption keys, database passwords) can be generated by a script.

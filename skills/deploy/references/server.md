@@ -1,5 +1,7 @@
 # Server hardening checklist
 
+For a **standalone Compose host** (`compose-host.md`), such as Vault's own server. Cluster nodes are set up by `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` instead; rules 1, 2, 6 and 13 hold for them too.
+
 A Hetzner host (today one VM per product; several products may share one bigger machine, with prod kept apart from dev), provisioned by `/Volumes/Projects/ghostmind/start` (`scripts/init-phase*.sh`). Keep it as small as the product allows. Each item below is a check you can run.
 
 | # | Rule | Check |
