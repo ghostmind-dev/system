@@ -160,10 +160,14 @@ For a new project, pick unused numbers in the usual ranges: 5000–5999 for web 
 `run` operates projects on the Mac, and every folder's `meta.json` is what it reads. Its own skill (the `run` plugin, shipped from the `run` repo) holds the detail; load it for anything beyond this summary.
 
 - `run projects`: the dashboard. Every folder whose `meta.json` has `type: "project"`, with its herdr workspace, git branch and uncommitted changes; workspaces are opened and closed from it, alone or by tag or group. This is where most of the work happens. To ask what exists or what is running, use `run projects --json` (add `--panes` for what each pane runs) rather than reading folders.
+  - **Opening a project** builds its workspace and asks which of its panes' routines to start: all, a hand-picked few, or one **profile**.
+  - **Saved views** filter the table (by tag, group, folder, organization, machine, status, git state); they live in `~/.config/run/projects.json`.
+  - **Other machines**: projects on a Mac saved in herdr (`herdr machine add`) appear in the same table and are opened there over SSH.
 - `run routine <name>`: runs a `routines` entry. It splits on spaces **without a shell**, so pipes, quotes and redirects belong inside a script.
-- `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` blocks. `init --start` also runs the routine each pane names. Fetch the schema before editing a `herdr` block: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
+- `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` blocks. `init --start` also runs the routine each pane names; `--profile <name>` or `--only <tab/pane,...>` narrows which.
+- `run herdr colors [on|off]`: shows or hides each project's colour mark in herdr's sidebar. Fetch the schema before editing a `herdr` block: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
 
-A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. A herdr pane may name the `routine` it usually runs.
+A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. In the `herdr` block, a workspace may carry a `color` (its mark in herdr's sidebar), and a pane may name the `routine` it usually runs and the `profiles` it is part of. A profile is a set of routines started together for one way of working on a project (`web`, `mobile`), tagged pane by pane across the project's apps.
 
 **Removed in run 0.9.0, they no longer exist:** `run custom`, `run vault kv`, `run docker`, `run terraform`, `run tmux`, `run meta`, `run action`, `run misc`, and the meta.json keys `compose`, `docker`, `terraform`, `custom`, `tmux`, `template`, `global`. A project still calling one is converted with the `migrate` skill: its scripts become `scripts/*.sh`.
 
