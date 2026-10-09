@@ -2,9 +2,9 @@
 
 Most apps run on Kubernetes in both environments: the k3s cluster on Hetzner in prod, and an OrbStack cluster in dev (this Mac's, or another Mac's over Tailscale). The image and `.env.schema` are the app; the files below are a thin wrapper around them. Copy from the reference and rename:
 
-- **`/Volumes/Projects/ghostmind/portal`** (`portal/` = the ui, `tunnel/`): the full pattern, prod and dev, no Compose.
-- **`/Volumes/Projects/ghostmind/tags`** (db, city, mcp, native, tunnel): several apps in one project, with one shared `k8s/dev-setup.sh` at the project root.
-- **`/Volumes/Projects/ghostmind/users`**: a shared service that stays up in dev (`start` routine) with its own dev database.
+- **`/Volumes/Projects/portal`** (`portal/` = the ui, `tunnel/`): the full pattern, prod and dev, no Compose.
+- **`/Volumes/Projects/tags`** (db, city, mcp, native, tunnel): several apps in one project, with one shared `k8s/dev-setup.sh` at the project root.
+- **`/Volumes/Projects/users`**: a shared service that stays up in dev (`start` routine) with its own dev database.
 - **`/Volumes/Projects/ghostmind/admin`**: stateful (SQLite on a volume), reachable on the tailnet only through Tailscale Serve.
 
 ```
