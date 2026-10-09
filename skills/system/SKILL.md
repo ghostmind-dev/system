@@ -68,6 +68,21 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 
 `docker/compose.*.yaml` exists only when the app isn't on Kubernetes. One project = one namespace, named after the project, in dev and prod. Apps reach each other by Service name (`<project>-<app>:<port>`), the same name the container had under Compose.
 
+## The core of every product
+
+Every product starts from the same six parts. A new product gets all of them unless the user says otherwise; what varies from one product to the next is what the app does, not how it is assembled.
+
+| Part | What it is | Reference |
+|---|---|---|
+| **Google sign-in** | One login for web, MCP and native, backed by the shared users database (`DB_USERS_ENDPOINT`), so a person is the same user in every product | `/Volumes/Projects/format/mcp` (`app/src/auth/oauth.ts`) |
+| **UI** | The web app, signing in through the MCP server's OAuth | `/Volumes/Projects/format/ui` |
+| **Database** | The product's own state: Hasura on the cluster | `/Volumes/Projects/tags/db` |
+| **MCP** | The app's actions as tools, stateless on the cluster | `/Volumes/Projects/potion/mcp` (transport) |
+| **Skills** | The Claude plugin that teaches the app's concepts and points at the MCP | `/Volumes/Projects/potion/plugin` |
+| **OpenRouter, the user's own** | Every AI feature runs on the key the user connects. We don't pay for inference, and a user who wants a heavier experience pays for their own | `/Volumes/Projects/format` (`ai_connections`) |
+
+A product works without an OpenRouter key: AI features stay off until the user connects one. Anything public adds a tunnel; a native app (iOS, Mac) is added on top of the core and signs in to the same OAuth server.
+
 ## Building blocks and their reference apps
 
 Replicate the reference; do not invent a new pattern when one exists. When a newer project does a block better, update this table so the reference moves to it.
@@ -148,7 +163,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
-| noice | ui 5065 |
+| noice | ui 5065 · db 5066 · Hasura console 9735 / api 9733 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
