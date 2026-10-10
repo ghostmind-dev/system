@@ -2,21 +2,21 @@
 
 ## One auth system: the MCP server is the product's OAuth server
 
-The most common product shape is a remote MCP, a web app and often a native app, all behind one Google login. Reference: `/Volumes/Projects/ghostmind/format` (`mcp`, `ui`, `mac`).
+The most common product shape is a remote MCP, a web app and often a native app, all behind one Google login. Reference: `/Volumes/Projects/format` (`mcp`, `ui`, `mac`).
 
-- **The MCP server is the authorization server.** It is remote (streamable HTTP over the tunnel), not stdio: Claude clients connect by URL and go through OAuth. Identity is delegated to Google (a Google proxy). Copy `/Volumes/Projects/ghostmind/format/mcp/app/src/auth/oauth.ts`, which gets three things right:
+- **The MCP server is the authorization server.** It is remote (streamable HTTP over the tunnel), not stdio: Claude clients connect by URL and go through OAuth. Identity is delegated to Google (a Google proxy). Copy `/Volumes/Projects/format/mcp/app/src/auth/oauth.ts`, which gets three things right:
   - **PKCE is enforced**: the client's `code_challenge` is passed to Google and the `code_verifier` forwarded at `/token`, so Google checks it;
   - **redirect URIs are allow-listed**: loopback plus configured https prefixes, so there's no open redirect;
   - **`state` is HMAC-signed**, with a 15-minute expiry.
 
   `potion/mcp` predates this and has none of the three; don't copy its OAuth. `PUBLIC_DOMAIN` must be the public host (`<app>.ghostmind.dev`), and the OAuth endpoints and `/.well-known/oauth-*` must route to this server on that host (`system` skill, Domains), or the redirects and discovery point at the wrong place.
-- **The web app signs in through the same server** (OAuth + PKCE), so there is one auth system for web, MCP and native. The default web app is static React + TanStack on Vite: `/Volumes/Projects/ghostmind/format/ui`. Use Next.js + next-auth (`potion/ui`) only when the app needs server rendering or its own API routes.
-- **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/ghostmind/format/mac/app/Sources/Format/Account.swift`.
+- **The web app signs in through the same server** (OAuth + PKCE), so there is one auth system for web, MCP and native. The default web app is static React + TanStack on Vite: `/Volumes/Projects/format/ui`. Use Next.js + next-auth (`potion/ui`) only when the app needs server rendering or its own API routes.
+- **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift`.
 - **One Google OAuth client per product.** `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` live once at `ghostmind/project/<project>/auth` (singular `project`), and every schema points there. Shared signing secrets (`HASURA_GRAPHQL_JWT_SECRET`, the state HMAC key) live there too.
 
 ## A remote MCP on the cluster is stateless
 
-On Kubernetes an MCP runs several replicas behind a Service and nothing pins a client to a pod. A server that keeps sessions in process memory (a `transports` map filled at `initialize`) answers `404 Session not found` (-32001) as soon as the next request lands on another pod. potion's prod MCP did exactly that at 2 replicas, and dev hid it because dev ran one pod. So: **no session map, no `sessionIdGenerator`, a fresh server per request, the caller resolved from the bearer token and headers on every request. Any pod answers any request.** Reference: `/Volumes/Projects/ghostmind/potion/mcp` (`app/src/main.ts`, `app/src/auth/google.ts`, `app/test/stateless.smoke.ts`, `k8s/mcp.dev.yaml`). Take the transport from potion and the OAuth from format (above).
+On Kubernetes an MCP runs several replicas behind a Service and nothing pins a client to a pod. A server that keeps sessions in process memory (a `transports` map filled at `initialize`) answers `404 Session not found` (-32001) as soon as the next request lands on another pod. potion's prod MCP did exactly that at 2 replicas, and dev hid it because dev ran one pod. So: **no session map, no `sessionIdGenerator`, a fresh server per request, the caller resolved from the bearer token and headers on every request. Any pod answers any request.** Reference: `/Volumes/Projects/potion/mcp` (`app/src/main.ts`, `app/src/auth/google.ts`, `app/test/stateless.smoke.ts`, `k8s/mcp.dev.yaml`). Take the transport from potion and the OAuth from format (above).
 
 - **SDK v2**, which implements spec revision 2026-07-28 (sessions and the `initialize` handshake are gone from the protocol): `@modelcontextprotocol/server` ^2.3.0 + `@modelcontextprotocol/node`, not `@modelcontextprotocol/sdk` 1.x. It needs `zod` ^4.2.0 and `@types/node` ^20.
 - **The shape:**
@@ -46,7 +46,7 @@ A single-host Compose deploy runs one container and isn't bound by this rule; an
 
 ## The product's Claude plugin (MCP + skill)
 
-The remote MCP gives Claude the app's **actions**; a skill gives it the app's **concepts**: what the entities are, which tool to reach for, and the traps. Ship both together as one Claude plugin in the product repo, so installing the plugin is all a user does. Reference: `/Volumes/Projects/ghostmind/potion/plugin`.
+The remote MCP gives Claude the app's **actions**; a skill gives it the app's **concepts**: what the entities are, which tool to reach for, and the traps. Ship both together as one Claude plugin in the product repo, so installing the plugin is all a user does. Reference: `/Volumes/Projects/potion/plugin`.
 
 ```
 <project>/
@@ -65,11 +65,11 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 
 ## Bring-your-own OpenRouter
 
-When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/ghostmind/format`, and `potion/agent/ai-connection.ts` for the same pattern.
+When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/format`, and `potion/agent/ai-connection.ts` for the same pattern.
 
 ## Tunnel (only if something is public)
 
-A cloudflared app per project sends each hostname **straight to its app's Service**: no Traefik. The pattern, manifests and credentials are in [kubernetes.md](kubernetes.md) → Tunnel. References: `/Volumes/Projects/ghostmind/portal/tunnel` (prod + dev on Kubernetes) and `/Volumes/Projects/ghostmind/tags/tunnel`.
+A cloudflared app per project sends each hostname **straight to its app's Service**: no Traefik. The pattern, manifests and credentials are in [kubernetes.md](kubernetes.md) → Tunnel. References: `/Volumes/Projects/portal/tunnel` (prod + dev on Kubernetes) and `/Volumes/Projects/tags/tunnel`.
 
 - **Prod** runs the tunnel from its own credentials JSON (`ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`): no account certificate, no DNS rights.
 - **Dev** uses the `ghostmind.app` account certificate (`ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`) to create the dev tunnel and route DNS.
@@ -79,7 +79,7 @@ Traefik is no longer part of the pattern, and no project has a `traefik/` app an
 
 ## Terraform (cloud resources: buckets, service accounts)
 
-No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashicorp/terraform` container through varlock. Reference: `/Volumes/Projects/ghostmind/tags/bucket` (`.env.schema`, `scripts/terraform.sh`, `infra/`).
+No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashicorp/terraform` container through varlock. Reference: `/Volumes/Projects/tags/bucket` (`.env.schema`, `scripts/terraform.sh`, `infra/`).
 
 - **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")`, the `TF_VAR_*` inputs, and `TF_STATE_PREFIX` built with `concat()`.
 - **`scripts/terraform.sh <dev|prod> [args]`** re-executes itself through `varlock run` with `APP_ENV` set (routines have no shell to set it), then runs `docker run --rm -v "$PWD/infra:/infra" -w /infra -e GOOGLE_CREDENTIALS -e TF_VAR_… hashicorp/terraform:1.13`: `init -reconfigure -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`).
@@ -92,4 +92,4 @@ See the `database` skill. The app's schema points `DATABASE_URL` (or `HASURA_GRA
 
 ## Worker / internal service
 
-Reference: `/Volumes/Projects/ghostmind/potion/worker` (`k8s/worker.yaml`). A Deployment and a Service like any app, with no route in the tunnel: sibling apps reach it at `http://<project>-worker:<port>`. Set its memory limit from what it really uses, and keep the prod manifest's hardening (read-only root filesystem, no capabilities) when it processes untrusted input.
+Reference: `/Volumes/Projects/potion/worker` (`k8s/worker.yaml`). A Deployment and a Service like any app, with no route in the tunnel: sibling apps reach it at `http://<project>-worker:<port>`. Set its memory limit from what it really uses, and keep the prod manifest's hardening (read-only root filesystem, no capabilities) when it processes untrusted input.
