@@ -1,7 +1,7 @@
 {
   "name": "system",
   "description": "The Ghostmind development system: Kubernetes in prod and dev (k3s, Skaffold), secrets (varlock + Vault), deploys through GitHub Actions, app building blocks, databases, migrating and auditing projects",
-  "version": "0.10.3",
+  "version": "0.10.4",
   "author": {
     "name": "ghostmind-dev"
   },
