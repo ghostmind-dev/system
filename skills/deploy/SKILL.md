@@ -14,7 +14,7 @@ description: >-
 
 **Prod changes only through a merge to main.** GitHub Actions is the only thing that deploys. Never `kubectl apply`, `edit`, `delete` or `exec` against prod to change an app. Read-only checks (`get`, `describe`, `logs`, `rollout status`) are fine.
 
-**Reference, live in prod:** `/Volumes/Projects/ghostmind/portal/.github/workflows/` (`_deploy-k8s.yaml`, `deploy.yaml`) and `/Volumes/Projects/ghostmind/tags/.github/workflows/`.
+**Reference, live in prod:** `/Volumes/Projects/portal/.github/workflows/` (`_deploy-k8s.yaml`, `deploy.yaml`) and `/Volumes/Projects/tags/.github/workflows/`.
 
 ## How a deploy runs
 
@@ -46,7 +46,7 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
        uses: ./.github/workflows/_deploy-k8s.yaml
        …
    ```
-3. **Prod init, once per project and again whenever an app or a prod secret path is added:** `bash k8s/prod-init.sh` at the project root (routine `prod_init`). Copy it unchanged from `/Volumes/Projects/ghostmind/magneto/k8s/prod-init.sh`: it takes everything from the project's own files, so nothing in it is project-specific. Without a flag it prints the plan and changes nothing; `--apply` does every `todo` line and is safe to run again.
+3. **Prod init, once per project and again whenever an app or a prod secret path is added:** `bash k8s/prod-init.sh` at the project root (routine `prod_init`). Copy it unchanged from `/Volumes/Projects/magneto/k8s/prod-init.sh`: it takes everything from the project's own files, so nothing in it is project-specific. Without a flag it prints the plan and changes nothing; `--apply` does every `todo` line and is safe to run again.
    - **Cluster:** the namespace (the `namespace:` of the manifests) and the RoleBinding `ci-deploy`, which lets CI of this repo (the git remote, `main` only) deploy into that namespace and nowhere else (built-in role `edit`). The repo and the project may have different names.
    - **Vault:** for each app whose manifest sets `VAULT_JWT_ROLE`, the policy `<project>-<app>` (read-only on exactly the prod paths its `.env.schema` points to) and the role `auth/k8s/role/<project>-<app>` bound to its service account (`new-app` → kubernetes.md).
    - **Tunnel:** the Cloudflare tunnel and DNS records named in `<app>/config/ingress.prod.yaml`, and its credentials JSON at `ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`. A host outside `ghostmind.dev` passes its zone's certificate: `CF_CERT=ghostmind/global/cloudflare/prod#CLOUDFLARED_<DOMAIN>` (the default is `CLOUDFLARED_GHOSTMIND_DEV` there; prod zone certificates stay under `/prod` so a dev session cannot read them).
@@ -71,7 +71,7 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 ## Not on the cluster
 
 - **A single host with Compose** (a standalone server; no product uses this today): [compose-host.md](references/compose-host.md), with its workflows in [workflow.md](references/workflow.md) and the host checklist in [server.md](references/server.md).
-- **Cloud Run and other managed targets:** build with Compose locally, deploy with the provider's CLI from a script. Reference: `/Volumes/Projects/playground/inference`.
+- **Cloud Run and other managed targets:** build with Compose locally, deploy with the provider's CLI from a script. Reference: `/Volumes/Projects/inference`.
 - **Debugging on a server:** [debug-access.md](references/debug-access.md).
 
 ## Possible improvement: no per-project setup (not done; today is `k8s/prod-init.sh`)

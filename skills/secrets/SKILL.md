@@ -37,7 +37,7 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 
 ## The schema
 
-**One committed `.env.schema` per app, for both environments.** Values that differ per environment use `if(forEnv(prod), <prod>, <dev>)`. References, both live in prod: `/Volumes/Projects/ghostmind/portal/tunnel/.env.schema` and `/Volumes/Projects/ghostmind/tags/city/.env.schema`.
+**One committed `.env.schema` per app, for both environments.** Values that differ per environment use `if(forEnv(prod), <prod>, <dev>)`. References, both live in prod: `/Volumes/Projects/portal/tunnel/.env.schema` and `/Volumes/Projects/tags/city/.env.schema`.
 
 ```bash
 # @plugin(@varlock/hashicorp-vault-plugin@2.1.1)

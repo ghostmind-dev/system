@@ -8,9 +8,9 @@ description: >-
 
 # Migrate a legacy project
 
-Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define the target. The full reference conversion is `/Volumes/Projects/ghostmind/tags` (seven apps, Terraform and iOS included; dev and prod green on 2026-09-30).
+Read the `system`, `secrets`, `new-app` and `deploy` skills first: they define the target. The full reference conversion is `/Volumes/Projects/tags` (seven apps, Terraform and iOS included; dev and prod green on 2026-09-30).
 
-**The target is Kubernetes** (prod on the k3s cluster, dev with Skaffold), unless the app is one of the exceptions that stays on Compose. Keep the old files and the old deploy working until the new setup is proven. References: `tags` (a multi-app product) and `/Volumes/Projects/ghostmind/users` (a single-app shared service that other products call). Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
+**The target is Kubernetes** (prod on the k3s cluster, dev with Skaffold), unless the app is one of the exceptions that stays on Compose. Keep the old files and the old deploy working until the new setup is proven. References: `tags` (a multi-app product) and `/Volumes/Projects/users` (a single-app shared service that other products call). Ask before touching anything another project uses: a `ghostmind/global/*` key, a tailnet node, a shared DB.
 
 ## Steps
 

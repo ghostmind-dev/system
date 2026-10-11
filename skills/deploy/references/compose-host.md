@@ -6,7 +6,7 @@ Use this only for an app that **can't** go on the k3s cluster: a standalone serv
 
 **Where secrets exist:** only in the memory of running containers. They are never on disk, never in `docker inspect`, never in CI logs. At rest the server holds **no usable credential**.
 
-**Reference:** the git history of `/Volumes/Projects/ghostmind/tags` (`.github/workflows/_deploy.yaml`, `city.yaml`, `redeploy-all.yaml`; first green run 2026-09-30) and of `users`. Both repos now hold the cluster workflows instead.
+**Reference:** the git history of `/Volumes/Projects/tags` (`.github/workflows/_deploy.yaml`, `city.yaml`, `redeploy-all.yaml`; first green run 2026-09-30) and of `users`. Both repos now hold the cluster workflows instead.
 
 **CI never needs an admin or read token.** When a deploy fails with "permission denied", the fix is the policy (see *Validate before merging*), never a broader token in GitHub secrets.
 

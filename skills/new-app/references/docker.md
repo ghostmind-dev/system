@@ -52,7 +52,7 @@ COPY --from=ghcr.io/dmno-dev/varlock:1.21.0 /usr/local/bin/varlock /usr/local/bi
 RUN varlock install-plugin @varlock/hashicorp-vault-plugin@2.1.1
 ```
 
-References: `/Volumes/Projects/ghostmind/format/db/docker/Dockerfile` (glibc) and `/Volumes/Projects/ghostmind/format/tunnel/docker/Dockerfile` (Alpine).
+References: `/Volumes/Projects/format/db/docker/Dockerfile` (glibc) and `/Volumes/Projects/format/tunnel/docker/Dockerfile` (Alpine).
 
 Build context is the **service folder** (`..` from `docker/`). When the app imports shared code from the repo root (potion's `shared/`), make the context the repo root and copy that folder too, as `potion/mcp` does.
 
@@ -69,7 +69,7 @@ else
 fi
 ```
 
-**On Kubernetes both branches `exec`.** When the app dies the container exits, Kubernetes restarts it, and the new container logs in to Vault again with its service-account token. Restarts show in `kubectl get pods` and the probes mean something. Reference: `/Volumes/Projects/ghostmind/potion/mcp/docker/entrypoint.sh`. A prod loop (`while true; do … done`) belongs to a Compose host only, where the Vault login is single-use (compose.prod.yaml, below). Entrypoints carried over from that flow (portal's tunnel, tags, format, users) still loop; replace the loop with `exec` when the app is next touched.
+**On Kubernetes both branches `exec`.** When the app dies the container exits, Kubernetes restarts it, and the new container logs in to Vault again with its service-account token. Restarts show in `kubectl get pods` and the probes mean something. Reference: `/Volumes/Projects/potion/mcp/docker/entrypoint.sh`. A prod loop (`while true; do … done`) belongs to a Compose host only, where the Vault login is single-use (compose.prod.yaml, below). Entrypoints carried over from that flow (portal's tunnel, tags, format, users) still loop; replace the loop with `exec` when the app is next touched.
 
 ## Compose only: docker/compose.dev.yaml
 

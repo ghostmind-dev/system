@@ -164,6 +164,15 @@ for S in "${SERVICES[@]}"; do
     say WARN port "$P" "dev script hardcodes the port: use --port \$PORT so the schema owns it"
 done
 
+# ---------- publish scripts ask for the version ----------
+for S in "${SERVICES[@]}"; do
+  for f in "$S"/scripts/publish*.sh "$S"/scripts/release*.sh "$S"/scripts/extension-build.sh; do
+    [ -f "$f" ] || continue
+    has 'minor' "$f" && has 'major' "$f" && has '(^|[^a-z_])read ' "$f" || \
+      say WARN publish "$f" "a publish or release script asks which version first: patch, minor, major, keep or a typed version (system skill, rule 11)"
+  done
+done
+
 # ---------- workflows ----------
 for w in "$ROOT"/.github/workflows/*.y*ml; do
   [ -f "$w" ] || continue
