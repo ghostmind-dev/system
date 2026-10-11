@@ -11,6 +11,8 @@ These run on the Mac (or a device), not in Docker. They are still a service fold
 | Cloud Run / GPU job, script-driven | `/Volumes/Projects/inference` | bash scripts + gcloud; best example of a varlock schema |
 | Claude plugin / skills | `/Volumes/Projects/toolkits`, this repo | `.claude-plugin/marketplace.json` at the root, one plugin, many skills |
 
+**A publish or release script asks which version first** (rule 11 of the `system` skill): patch, minor, major, keep, or a version typed in full, before it builds. Copy the question from the reference of the same kind: `tags/native/scripts/publish.sh` (iOS), `tags/chrome/scripts/extension-build.sh` (Chrome extension), `format/mac/scripts/release.sh` (Mac).
+
 ## iOS / Expo notes (from tags, Expo SDK 54 on Xcode 27)
 
 - Xcode 27 renamed `Simulator.app` → `DeviceHub.app`, which breaks every `expo run:ios`. Fix it with patch-package on `@expo/cli`; the patch differs per CLI version (potion has one for 54.0.27, tags for 54.0.23, `native/scripts/fix-expo-simulator-check.sh`).

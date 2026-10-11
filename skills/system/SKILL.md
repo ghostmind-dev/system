@@ -42,6 +42,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
    Addresses: `/Volumes/Projects/home/networking.md`.
 9. **Expose only what must be public.** A Cloudflare tunnel exists only if an endpoint is public, and it sends each hostname straight to its app's Service. There is no Traefik.
 10. **Apps stay portable.** The image plus `.env.schema` is the app. No app depends on a Kubernetes feature to work, so it can run under Compose, on Cloud Run or on another cluster unchanged.
+11. **Every publish asks which version first.** A script that ships a versioned thing to people (an iOS build, a Chrome extension zip, a Mac release: the `mobile_publish`, `extension_build` and `release` routines) asks, before it builds, which release this is: patch, minor, major, keep the current version or a version typed in full, each choice shown with the version it gives; Enter takes the patch. An answer it does not know stops before anything is built. A routine that only sends again a build already on disk (`mobile_submit`) asks nothing. References: `/Volumes/Projects/tags/native/scripts/publish.sh` (iOS), `/Volumes/Projects/tags/chrome/scripts/extension-build.sh` (extension), `/Volumes/Projects/format/mac/scripts/release.sh` (Mac).
 
 ## Project shape
 
