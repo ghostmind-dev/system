@@ -60,6 +60,7 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 - **Design the MCP for an agent, not as a REST mirror.** Tools named for what the user wants done (`add_dictionary`, `try_dictation`), returns that say what happened and what to do next, and refusals that explain themselves. Look at potion's and format's tool sets.
 - **The skill caches what the tools can't say**: how the entities relate, which of two similar tools to use, what users mean by their words (potion: "sidebar" means Quick Access), and the mistakes an agent would otherwise make. It stays short; `writing-for-agents` has the craft.
 - **One source of truth per fact.** Tool behaviour lives in the tool descriptions; the skill points to tools and adds only the knowledge around them.
+- **Let the plugin's user pin a workspace.** When the product has workspaces (`system` → *Workspaces*), the MCP reads a `workspace` header (the workspace's name) and falls back to the person's default, so a project's own `.mcp.json` can add `"headers": { "workspace": "<name>" }` and every call from that project lands in the right place. Reference: `/Volumes/Projects/potion/mcp` and its `shared/server/workspace-resolver.ts`.
 - **Keep them in step.** A new or renamed MCP tool updates the skill in the same change, and bumps `plugin.json`'s `version` so installed copies refresh.
 - **Dev and prod.** The published `.mcp.json` points to prod. To try unreleased tools, add the dev URL (`https://<app>.ghostmind.app/mcp`) as a separate MCP in your own Claude config; never ship it.
 
@@ -89,6 +90,22 @@ No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashi
 ## Database
 
 See the `database` skill. The app's schema points `DATABASE_URL` (or `HASURA_GRAPHQL_ENDPOINT`) at the project's DB.
+
+## Things at home: relay
+
+A product in the cloud cannot see a person's home network. **relay** (`/Volumes/Projects/relay`) is the one way in, for every product: the person runs one small program at home, signed in to their relay account, and chooses which of our apps may use it. A product never ships its own program for the home, never asks the person to open a port, and never holds its own connection into the house. Its README has the API, the MCP tools and the protocol; it is on dev only so far (`https://relay.ghostmind.app`), so check its state before relying on it.
+
+**Make a product relay compatible whenever it touches something in the place where the person is** (plays on a speaker, switches a light, reads a sensor). It is three small things, all on the product's server. Reference: `/Volumes/Projects/noice/ui/app/src/speakers.js`.
+
+- **Ask relay as the person, with the token they showed the product.** `GET <RELAY_URL>/api/things?kind=…` lists what their relays see; `POST <RELAY_URL>/api/act` `{ thing, action, params }` tells one thing to do something and returns how it went. `RELAY_URL` is in the product's schema: `if(forEnv(prod), "https://relay.ghostmind.dev", "https://relay.ghostmind.app")`.
+- **Be known to relay.** relay recognises a product by the Google OAuth client that issued the token: add `<product>=<its client id>` to `TRUSTED_APPS` in relay's `api/.env.schema`. That is a change in the relay project, deployed there.
+- **Pass relay's refusals on, word for word.** Until the person runs `relay allow <product>`, every call answers 403 with the sentence to show. No relay connected, a thing that is away, an action a thing cannot do: each comes back as a sentence a person can act on. Show it in the UI and return it from the MCP tool; do not replace it with a generic error.
+
+- **Put "Connect relay" in the product's settings.** It is where a person looks for what the product is connected to, and it is the same place in every product. It shows whether relay is connected and, when it is not, a button to relay's own page, `<RELAY_URL>/connect?app=<product>&return=<the settings page>`, where the person signs in to relay and allows the product; they come back with `?relay=connected`. Where the product uses a thing (a list of speakers), a short line pointing to settings is enough. Reference for the flow: noice (its button sits under the Player today, before it had a settings page).
+
+Keep the product's own words in its own tools (noice has `play_on_speaker`, not `act`): relay knows things and actions, the product knows what they mean for it.
+
+**What does not exist yet**, so do not design on it: a product *offering* its own things to relay for other products to use (a dashboard in one product driving another through relay), and giving a product some things and not others. Between two products in the cloud, use each product's MCP or API directly.
 
 ## Worker / internal service
 

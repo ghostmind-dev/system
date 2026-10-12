@@ -84,6 +84,28 @@ Every product starts from the same six parts. A new product gets all of them unl
 
 A product works without an OpenRouter key: AI features stay off until the user connects one. Anything public adds a tunnel; a native app (iOS, Mac) is added on top of the core and signs in to the same OAuth server.
 
+## Workspaces (strongly encouraged)
+
+Give a product **workspaces** from its first migration: isolated containers inside an account, with everything the person makes belonging to one of them. It is not one of the six parts, because a few products have nothing to put in one, but for any product that holds a person's data it is the default, and leaving it out is a decision to say out loud. References: `/Volumes/Projects/potion` (`workspaces` table, `shared/server/workspace-resolver.ts`, the `workspace` header in `plugin/.mcp.json`) and `/Volumes/Projects/tags`.
+
+Why it is worth doing before anyone asks:
+
+- **People end up with more than one context**: home and work, one client each, one place each (a house, an office). Without workspaces they open a second account.
+- **Sharing and teams attach to a workspace**, not to a person. A product whose rows belong to a user has nowhere to put a second member.
+- **Adding it later touches everything**: a column and a backfill on every table, a parameter on every query, tool and screen. Adding it first costs one table and one column.
+
+What it takes:
+
+- **A `workspaces` table** (`id`, `user_id`, `name`, `is_default`) and a **`workspace_id` on every table a person's data lives in**, with the foreign key cascading. Rows are filtered by workspace, not only by user. Nothing crosses from one workspace to another.
+- **One default workspace, created with the account**, so a person who never thinks about workspaces never sees the idea.
+- **The workspace can be set from every surface**, always: a switcher in the web UI, a `workspace` header (the workspace's name) for the MCP so a project's `.mcp.json` can pin one, a parameter in the API, a flag in a command line. A surface that can't choose is a surface stuck in the default.
+- **One resolver, shared by every backend**: the workspace named by the caller, else the default, else create the default. Two backends resolving differently is how potion's iOS server came to refuse what its MCP accepted.
+- **MCP tools for it**: list, create, read and set the default. **Renaming and deleting a workspace stay web-only**, on purpose: a delete takes everything inside with it, and a rename breaks every `.mcp.json` pinned to the old name.
+
+When the product shows a single workspace at first, still put `workspace_id` in the schema: the interface can grow later, the tables cannot cheaply.
+
+Skip it when there is honestly nothing to contain: a static site, an internal worker, a shared service, a prototype. Say so in the project's `CLAUDE.md`, with the reason.
+
 ## Building blocks and their reference apps
 
 Replicate the reference; do not invent a new pattern when one exists. When a newer project does a block better, update this table so the reference moves to it.
@@ -104,6 +126,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container); `/Volumes/Projects/format/db` for `create-db.sh` |
+| **Reaching things in a person's home** (relay) | The product plays on, switches or reads something that sits on a home network: a speaker, a light, a sensor | `/Volumes/Projects/relay` (its README: the API and the protocol); the app's side: `/Volumes/Projects/noice/ui/app/src/speakers.js`. `new-app` → blocks.md → *Things at home: relay* |
 | Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/potion/worker` (a Deployment and Service with no tunnel route) |
 | Compose + Cloud Run (not on the cluster) | A managed target, a script project | `/Volumes/Projects/inference` (bash + gcloud, varlock on the host) |
 | Shared service, always on in dev | A service other products call | `/Volumes/Projects/users` (`start` routine, its own dev database) |
@@ -165,6 +188,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
 | noice | ui 5065 · db 5066 · Hasura console 9735 / api 9733 |
+| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |

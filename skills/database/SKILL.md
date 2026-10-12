@@ -40,6 +40,10 @@ For read-only exploration of any DB, use the `toolkits:postgres` skill.
    HASURA_GRAPHQL_DATABASE_URL=concat("postgres://", $DB_USER, ":", $DB_PASSWORD, "@", $PGHOST, ":5432/", $DB_NAME, "?sslmode=require")
    ```
 
+## Shape the schema around a workspace
+
+Before the first migration, decide what the rows belong to. Strongly encouraged (`system` → *Workspaces*): a `workspaces` table (`id`, `user_id`, `name`, `is_default`, one default per person) and a `workspace_id` on every table that holds a person's data, with the foreign key cascading, so a second context, sharing or a team later needs no change to the tables. Reference: `/Volumes/Projects/potion/db`. A table that hangs off the user alone (their AI connection, their account settings) stays on `user_id`.
+
 ## Hasura
 
 - **Hasura is a Deployment and Service like any app** (`/Volumes/Projects/tags/db/k8s/db.yaml`), reached by other apps at `http://<project>-db:<port>` and logging in to Vault with its service account. Its readiness and liveness probes hit `/healthz` on the app's real port; the image's built-in Docker healthcheck hardcodes 8080 and Kubernetes ignores it. To query prod from the Mac, use a read-only `kubectl --context ghostmind -n <project> port-forward`.
