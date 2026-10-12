@@ -189,6 +189,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
 | noice | ui 5065 · db 5066 · Hasura console 9735 / api 9733 |
 | relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 |
+| db | postgres 5432 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
