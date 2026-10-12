@@ -110,7 +110,7 @@ Rules:
 | Host scripts / routines | `varlock run -- bash scripts/x.sh`, from the **app folder** (varlock only looks for `.env.schema` in the cwd) |
 | A host script that needs prod config (Terraform prod, an EAS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
 | A child that needs the Vault token (scripts calling the `vault` CLI, a Compose app passing it to its container) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
-| Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …`, as the `database` skill's `create_db` does |
+| Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …` |
 | A Compose app in dev (non-Kubernetes targets only; for `${PORT}` interpolation) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |
 | Inside a container (dev and prod pods) | `ENTRYPOINT ["varlock","run","--","/entrypoint.sh"]` (see `new-app`) |
 | GitHub Actions | `dmno-dev/varlock-action@v1`, or `varlock run --` in a step |

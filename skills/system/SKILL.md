@@ -58,7 +58,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
     k8s/     <app>.yaml  <app>.dev.yaml      prod and dev manifests
     skaffold.yaml                dev on the current kube context (names no cluster)
     .dockerignore                node_modules, .next, dist
-    scripts/                     the app's own verbs: migrate.sh, create-db.sh…
+    scripts/                     the app's own verbs: migrate.sh, console.sh…
     meta.json                    routines dev, dev_keep, delete (skaffold) + herdr tab for this app
   k8s/                           the project's scripts: dev-setup.sh (pre-deploy hook shared by the apps), remove.sh, prod-init.sh (one-time prod setup, `deploy` skill)
   shared/                        only when several backends share TypeScript; the apps then build from the root
@@ -125,7 +125,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
-| Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container); `/Volumes/Projects/format/db` for `create-db.sh` |
+| Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
 | **Reaching things in a person's home** (relay) | The product plays on, switches or reads something that sits on a home network: a speaker, a light, a sensor | `/Volumes/Projects/relay` (its README: the API and the protocol); the app's side: `/Volumes/Projects/noice/ui/app/src/speakers.js`. `new-app` → blocks.md → *Things at home: relay* |
 | Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/potion/worker` (a Deployment and Service with no tunnel route) |
 | Compose + Cloud Run (not on the cluster) | A managed target, a script project | `/Volumes/Projects/inference` (bash + gcloud, varlock on the host) |
@@ -151,7 +151,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Vault, app secrets | `ghostmind/project/<project>/<app>` (+ `/dev`, `/prod`) | `ghostmind/project/potion/mcp/prod` |
 | Vault, shared secrets | `ghostmind/global/<provider>`; look it up live (`secrets` skill) | `ghostmind/global/openrouter` |
 | Database | `<project>_<app>_<env>` | `potion_db_prod` |
-| Routines | `dev` (`skaffold dev`), then verbs (`migrate`, `create_db`); no `prod` routine | |
+| Routines | `dev` (`skaffold dev`), then verbs (`migrate`, `console`); no `prod` routine | |
 | Public host | `<app>.ghostmind.app` (dev) / `<app>.ghostmind.dev` (prod); see Domains | `format.ghostmind.app` / `format.ghostmind.dev` |
 
 ## Domains
