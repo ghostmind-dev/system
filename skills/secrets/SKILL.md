@@ -72,9 +72,9 @@ PUBLIC_URL=if(forEnv(prod), "https://<app>.ghostmind.dev", "https://<app>.ghostm
 NEXTAUTH_SECRET=vaultSecret()
 # --- a key whose Vault name differs from the item: path#KEY
 GOOGLE_CLIENT_ID=vaultSecret("ghostmind/project/<project>/auth#GOOGLE_OAUTH_CLIENT_ID")
-# --- per-environment secret
-# @sensitive
-STRIPE_SECRET_KEY=if(forEnv(prod), vaultSecret("ghostmind/global/stripe/prod"), vaultSecret("ghostmind/global/stripe"))
+# --- per-environment value
+# @type=url
+DB_USERS_ENDPOINT=if(forEnv(prod), vaultSecret("ghostmind/global/users/prod"), vaultSecret("ghostmind/global/users"))
 # --- global secret
 # @sensitive
 OPENROUTER_API_KEY=vaultSecret("ghostmind/global/openrouter")
@@ -108,7 +108,7 @@ Rules:
 | Where | How |
 |---|---|
 | Host scripts / routines | `varlock run -- bash scripts/x.sh`, from the **app folder** (varlock only looks for `.env.schema` in the cwd) |
-| A host script that needs prod config (Terraform prod, an EAS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
+| A host script that needs prod config (Terraform prod, an iOS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
 | A child that needs the Vault token (scripts calling the `vault` CLI, a Compose app passing it to its container) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
 | Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …` |
 | A Compose app in dev (non-Kubernetes targets only; for `${PORT}` interpolation) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |

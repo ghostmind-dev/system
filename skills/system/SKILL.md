@@ -19,7 +19,7 @@ The system is **a few plain tools plus reference apps**. There is no framework t
 
 **Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception: no product holds a compose file any more (the Compose hosts are Vault's own server and the house's Zigbee bridge on a Raspberry Pi, both outside the cluster). Start from Kubernetes, and reach for Compose only when the target can't be the cluster.
 
-Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`.
+Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user may type `/system:debrief`: what it taught goes back into these skills.
 
 ## Rules every project follows
 
@@ -37,10 +37,11 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
    - **Between Hetzner servers: the Hetzner private network (10.0.0.x), never Tailscale.** It is free, built in and one less thing to fail.
    - **Across providers** (Hetzner ↔ Google Cloud, the M1 Mac…): Tailscale is allowed for running prod traffic, as a deliberate link. The node is tagged (tagged nodes don't expire), the ACL allows only that path, and the link is monitored. For a managed service with no persistent host (Cloud Run), use public HTTPS with auth instead.
    - **Shared users:** local users in dev (`state.users.svc.cluster.local:5090`) and the same Service on 5080 in prod, both through `DB_USERS_ENDPOINT` in Vault. Dev can't read the prod value.
+   - **Billing:** the same way, through `BILLING_ENDPOINT` in Vault (`ghostmind/global/billing`, and `…/billing/prod`). A product never calls Stripe.
    - **Dev and deploy** (the Mac, CI reaching the cluster API, SSH, debugging) use Tailscale.
    Inside the cluster: NetworkPolicies (default deny), no Istio, no Ingress for now (Gateway API if one tunnel ever fronts the whole cluster).
    Addresses: `/Volumes/Projects/home/networking.md`.
-9. **Expose only what must be public.** A Cloudflare tunnel exists only if an endpoint is public, and it sends each hostname straight to its app's Service. There is no Traefik.
+9. **Expose only what must be public.** A Cloudflare tunnel exists only if an endpoint is public, and it sends each hostname straight to its app's Service. There is no Traefik. A product that has a public endpoint has its `tunnel/` app from the start, in dev (`<app>.ghostmind.app`) and in prod (`<app>.ghostmind.dev`): the tunnel is part of the product's structure, not a step of its first deploy.
 10. **Apps stay portable.** The image plus `.env.schema` is the app. No app depends on a Kubernetes feature to work, so it can run under Compose, on Cloud Run or on another cluster unchanged.
 11. **Every publish asks which version first.** A script that ships a versioned thing to people (an iOS build, a Chrome extension zip, a Mac release: the `mobile_publish`, `extension_build` and `release` routines) asks, before it builds, which release this is: patch, minor, major, keep the current version or a version typed in full, each choice shown with the version it gives; Enter takes the patch. An answer it does not know stops before anything is built. A routine that only sends again a build already on disk (`mobile_submit`) asks nothing. References: `/Volumes/Projects/tags/native/scripts/publish.sh` (iOS), `/Volumes/Projects/tags/chrome/scripts/extension-build.sh` (extension), `/Volumes/Projects/format/mac/scripts/release.sh` (Mac).
 
@@ -82,7 +83,7 @@ Every product starts from the same six parts. A new product gets all of them unl
 | **Skills** | The Claude plugin that teaches the app's concepts and points at the MCP | `/Volumes/Projects/potion/plugin` |
 | **OpenRouter, the user's own** | Every AI feature runs on the key the user connects. We don't pay for inference, and a user who wants a heavier experience pays for their own | `/Volumes/Projects/format` (`ai_connections`) |
 
-A product works without an OpenRouter key: AI features stay off until the user connects one. Anything public adds a tunnel; a native app (iOS, Mac) is added on top of the core and signs in to the same OAuth server.
+A product works without an OpenRouter key: AI features stay off until the user connects one. Anything public adds a tunnel, with its dev and its prod side together; a native app (iOS, Mac) is added on top of the core and signs in to the same OAuth server.
 
 ## Workspaces (strongly encouraged)
 
@@ -108,7 +109,7 @@ Skip it when there is honestly nothing to contain: a static site, an internal wo
 
 ## Building blocks and their reference apps
 
-Replicate the reference; do not invent a new pattern when one exists. When a newer project does a block better, update this table so the reference moves to it.
+Replicate the reference; do not invent a new pattern when one exists. When a newer project does a block better, update this table so the reference moves to it. **A reference can be behind the rules.** When a reference and `comply`'s `scripts/check.sh` disagree, the check is right: copy the reference's code and fix what the check reports.
 
 | Block | Use when | Reference |
 |---|---|---|
@@ -124,6 +125,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
+| **Payments** (billing) | The product sells a plan | `/Volumes/Projects/billing` (its README: the contract); the product's side: `/Volumes/Projects/tags/shared/server/billing.ts`. One Stripe account, one webhook and one customer per person for every product; the product holds a billing token and no Stripe key. `new-app` → blocks.md → *Payments: billing* |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
 | **Reaching things in a person's home** (relay) | The product plays on, switches or reads something that sits on a home network: a speaker, a light, a sensor | `/Volumes/Projects/relay` (its README: the API and the protocol); the app's side: `/Volumes/Projects/noice/ui/app/src/speakers.js`. `new-app` → blocks.md → *Things at home: relay* |
@@ -133,12 +135,14 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Stateful app on a volume, tailnet only | An internal tool | `/Volumes/Projects/ghostmind/admin` (SQLite on a volume, Tailscale Serve) |
 | Compose on a standalone host | An app that can't go on the cluster | `deploy` → compose-host.md. No product uses it today: tags and users did before moving to the cluster (their git history) |
 | Compose on a small device, deployed over SSH | A single-purpose box that must stay light (a Raspberry Pi with a radio): the host has only git and Docker, no agent, no CI runner | `/Volumes/Projects/bridge` (`scripts/deploy.sh`: edited on the Mac, `run routine deploy` pushes, then the host pulls and restarts only the service whose files changed. It first brings back what the app rewrote on the host, here Zigbee2MQTT's `configuration.yaml`, so the two sides never diverge) |
-| iOS / Expo | Mobile | `/Volumes/Projects/tags/native` (varlock, signing and creds scripts); older: `potion/native` |
+| iOS app | Mobile | `/Volumes/Projects/relay/native` (no server of its own, signs in through the product's OAuth); `/Volumes/Projects/tags/native` (with a companion server; signing and creds scripts); older: `potion/native`. `new-app` → non-web.md → *A mobile app* |
 | Raycast extension | Mac launcher tools | `/Volumes/Projects/labo/projects` |
 | Swift macOS app | Native Mac | `/Volumes/Projects/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
+| Mac app around a program we already have | Native Mac | `/Volumes/Projects/relay/mac` (contains the product's command-line program; trial and package builds; released to `downloads.ghostmind.dev`). `new-app` → non-web.md → *A Mac app* |
 | Python CLI/package | Tooling | `/Volumes/Projects/theme` |
+| **Html written by a model, shown in an app** | A note's chart, a dashboard, the box under the mouse on a map, a card: any place an AI writes the markup | `/Volumes/Projects/block`: `lib/` is `@ghostmind-dev/block` (the sandboxed frame, any npm library, sized slots, the app's own functions lent to the block); `ui/app/src/frame.tsx` mounts one, `mcp/app/src/blocks/slots.ts` declares the slots. Never write another iframe for this (`new-app` → blocks.md) |
 
-`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). Every project in the table runs on Kubernetes in dev and prod, with no Traefik and no compose file, so manifests, Skaffold files and workflows can be copied from any of them; `portal` and `tags` are the cleanest. What is still legacy: potion's `bucket` (`.env.base`, `run` scripts) and leftover `.env.base` / `.env.template` files in `potion/chrome` and `potion/native`; several entrypoints (portal's tunnel, tags, format, users) still loop in prod, a Compose habit (`new-app` → docker.md). **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead. Its stateless transport (`app/src/main.ts`) is the reference for every MCP on the cluster.
+`portal` is the reference for how an app is packaged and run; `format` and `tags` are references for app code (auth, web, native, db). Every project in the table runs on Kubernetes in dev and prod, with no Traefik and no compose file, so manifests, Skaffold files and workflows can be copied from any of them; `portal` and `tags` are the cleanest. What is still legacy: potion's `bucket` (`.env.base`, `run` scripts) and leftover `.env.base` / `.env.template` files in `potion/chrome` and `potion/native`; several entrypoints (portal's tunnel, tags, format, users) still loop in prod, a Compose habit (`new-app` → docker.md). **Don't copy how `format` and `billing` choose the cluster**: they pin `kubeContext: m1` in `skaffold.yaml` and run Skaffold through a `scripts/skaffold.sh` that sets `DOCKER_HOST=ssh://m1`, which the check fails (no file names a cluster). **Don't copy `potion/mcp`'s OAuth**: it doesn't enforce PKCE, accepts any redirect URI and leaves `state` unsigned; take format's instead. Its stateless transport (`app/src/main.ts`) is the reference for every MCP on the cluster.
 
 ## Naming
 
@@ -183,7 +187,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | Project | Ports |
 |---|---|
 | portal | ui 5096 |
-| tags | city 5085 · db 5086 · mcp 3085 · native 3086 |
+| tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 |
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
@@ -193,6 +197,8 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
+| block | demo 5105 · ui 5106 (the one dev host: it sends /mcp, /oauth and /api to the mcp) · db 5107 · mcp 3105 · Hasura console 9775 / api 9773 |
+| billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
 | vault | 8200 |
 
 For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
@@ -218,6 +224,8 @@ A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root
 ## Environment
 
 - No devcontainers: everything runs on the Mac host (projects under `/Volumes/Projects`).
+- **This text may be older than the repo.** The plugin Claude loads is an installed copy; the source is `/Volumes/Projects/system/skills`. On a Mac that has the repo, read the port registry, the reference table and `database` there before acting on them: block was first given two Hasura ports that relay already held, and was sent to a shared RDS that had been removed, both from an installed copy a few days old.
+- **The shared dev services are on the M1's cluster only**: the users service (`state.users.svc.cluster.local`) and the shared Postgres (`db-postgres.db.svc.cluster.local`). A product that signs people in or has a database runs its dev on the M1 (`new-app` → kubernetes.md → Dev machines); on this Mac's own cluster those names do not resolve.
 - **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **A dev machine is a pair**, a kube context and a Docker context for the same OrbStack, switched together (`kubectl config use-context X && docker context use X`): an image exists only on the daemon that built it. Contexts are per Mac and **no file in a repo names a cluster** (no `kubeContext` in `skaffold.yaml`): `skaffold dev` uses the current context. Another Mac's OrbStack over Tailscale needs its Docker context on an SSH-forwarded unix socket, not `ssh://` (Skaffold cannot dial it): `new-app` → kubernetes.md → Dev machines. `ghostmind` is the prod context (read-only use): scripts that touch prod always pass `--context ghostmind`, never the current context.
 - After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: `orb stop && orb start`. OrbStack has 10 GB of RAM.
 - Compose paths (when an app has them) are **relative to the compose file**; `SRC`/`LOCALHOST_SRC` are legacy.

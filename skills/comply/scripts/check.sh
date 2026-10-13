@@ -127,6 +127,11 @@ for S in "${SERVICES[@]}"; do
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
         has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; skaffold dev uses the current kube context (paired with the Docker context on the same machine)"
+        # a script that names a cluster is the same pin, one file away (scripts/skaffold.sh with DOCKER_HOST=ssh://m1, kubectl --context m1)
+        for SH in "$S"/scripts/*.sh; do
+          [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -Eq 'DOCKER_HOST=ssh://|--(kube-)?context[ =](m1|m3|orbstack)\b' && \
+            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; switch the kube and Docker contexts instead (new-app kubernetes.md, Dev machines)"
+        done
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
         has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the cluster on the Docker host uses the image directly)"
       fi
@@ -140,6 +145,8 @@ for S in "${SERVICES[@]}"; do
       done
     else
       [ -f "$D/compose.dev.yaml" ] || say WARN k8s "$K" "no dev manifest (k8s/<app>.dev.yaml + skaffold.yaml)"
+      # a tunnel is the public host of the product in both environments: a prod-only one leaves dev on localhost
+      [ -f "$S/config/ingress.prod.yaml" ] && [ ! -f "$S/config/ingress.dev.yaml" ] && say FAIL tunnel "$S" "a prod tunnel with no dev tunnel: add config/ingress.dev.yaml (<app>.ghostmind.app), k8s/tunnel.dev.yaml and skaffold.yaml, so dev has the same one host as prod (reference: block/tunnel)"
       [ -f "$D/compose.dev.yaml" ] && say WARN k8s "$S" "prod is on Kubernetes but dev still uses Compose: move dev to Skaffold (reference: portal)"
     fi
   elif [ -f "$S/docker/Dockerfile" ] && ls "$D"/compose*.yaml >/dev/null 2>&1; then
@@ -182,6 +189,8 @@ for w in "$ROOT"/.github/workflows/*.y*ml; do
   has 'run vault kv export|/run/secrets/\$' "$w" && say FAIL workflow "$w" "legacy secret export to /run/secrets: use the single-use login flow"
   has 'play/actions/vault@' "$w" && ! has 'login:\s*"?false' "$w" && say WARN workflow "$w" "play/actions/vault logs in by default: pass login: \"false\""
   has 'group:\s*deploy-[a-z0-9]+\s*$' "$w" && say WARN workflow "$w" "concurrency group shared by all apps cancels sibling runs: use deploy-<project>-<app>"
+  [ "$(grep -Ec 'uses:\s*\./\.github/workflows/_deploy-k8s\.yaml' "$w")" -gt 1 ] && ! has 'needs\.changes\.outputs' "$w" && \
+    say WARN workflow "$w" "every app is redeployed on each merge: deploy only what changed, and everything on a run by hand (deploy skill, step 2)"
   has 'StartedAt' "$w" && ! has 'RestartCount' "$w" && say WARN workflow "$w" "sleep-based verification: use the health-check loop from deploy/references/workflow.md"
 done
 
