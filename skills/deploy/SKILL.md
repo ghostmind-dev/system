@@ -123,6 +123,9 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 - **OIDC login refused:** the project's namespace or RoleBinding is missing (run `k8s/prod-init.sh`, step 3), or the run isn't on `main`.
 - **Image pull error:** the `ghcr` pull secret is refreshed on each deploy with a token that dies with the job. Nodes share images with each other, so this shows up only on an image no node has. Re-run the deploy.
 - **Rolling back:** revert the commit and merge. Don't `kubectl rollout undo` on prod.
+- **No run started.** A minute after a merge, `gh run list -R <repo> --limit 3` shows nothing new: the push that created `main`, and now and then a pull request merged from the command line, start no workflow. Start it by hand (`gh workflow run deploy --ref main -f apps=all`, or the app's own workflow where there is one per app) and say so in the report. Do not conclude the deploy happened from the merge alone.
+- **A new repo's default branch is the first one pushed.** `gh repo create … --source .` from `dev` makes `dev` the default; set it before the first deploy: `gh repo edit <repo> --default-branch main`.
+- **GitHub's API answers 502 while a run is watched** (`gh run watch` stops, `gh run view` fails). The run goes on. Read the result from the cluster instead: the pods' age (`kubectl -n <project> get pods`) and the public URL, then the run once the API answers.
 
 ## Not on the cluster
 
