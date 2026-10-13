@@ -31,7 +31,7 @@ done
 
 If the key is there, point to it. If it's missing and it is shared by nature (a provider API key, infra credentials), ask the user for the value and add it to global. Otherwise it belongs to the project. This repo is public, so write global paths and key names into skills and docs only when a specific app needs them, never as an inventory.
 
-**Global or project?** It is global when the same value serves several products (an OpenRouter key, the RDS admin login, the Hetzner token). It is project-scoped when it belongs to one app (its OAuth client secret, JWT secret, DB password). **Exception:** a shared service's own secrets live in global when other products call it with them. users' Hasura admin secret is `ghostmind/global/users#DB_USERS_SECRET`, and users' own schema points there too. A new provider gets its own path: `vault kv put ghostmind/global/<provider> KEY=...`. When adding a key to an existing path, use `vault kv patch`, not `put`, so the other keys survive.
+**Global or project?** It is global when the same value serves several products (an OpenRouter key, the shared Postgres server's address, the Hetzner token). It is project-scoped when it belongs to one app (its OAuth client secret, JWT secret, DB password). **Exception:** a shared service's own secrets live in global when other products call it with them. users' Hasura admin secret is `ghostmind/global/users#DB_USERS_SECRET`, and users' own schema points there too. A new provider gets its own path: `vault kv put ghostmind/global/<provider> KEY=...`. When adding a key to an existing path, use `vault kv patch`, not `put`, so the other keys survive.
 
 The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is what un-migrated projects still read. Leave it alone.
 
@@ -72,9 +72,9 @@ PUBLIC_URL=if(forEnv(prod), "https://<app>.ghostmind.dev", "https://<app>.ghostm
 NEXTAUTH_SECRET=vaultSecret()
 # --- a key whose Vault name differs from the item: path#KEY
 GOOGLE_CLIENT_ID=vaultSecret("ghostmind/project/<project>/auth#GOOGLE_OAUTH_CLIENT_ID")
-# --- per-environment secret
-# @sensitive
-STRIPE_SECRET_KEY=if(forEnv(prod), vaultSecret("ghostmind/global/stripe/prod"), vaultSecret("ghostmind/global/stripe"))
+# --- per-environment value
+# @type=url
+DB_USERS_ENDPOINT=if(forEnv(prod), vaultSecret("ghostmind/global/users/prod"), vaultSecret("ghostmind/global/users"))
 # --- global secret
 # @sensitive
 OPENROUTER_API_KEY=vaultSecret("ghostmind/global/openrouter")
@@ -96,7 +96,7 @@ Rules:
 - Name the environments `dev` and `prod`. A file named `.env.local` is always loaded by varlock, so it must never exist in a project. If real resources already carry the legacy name `local` (a database `x-db-local`, a bucket, a Terraform state path), keep them and map in the schema: `TF_VAR_ENVIRONMENT=if(forEnv(prod), "prod", "local")`.
 - `.gitignore` carries `.env`, `.env.local` and `.env.*.local`, and nothing that hides `.env.schema` (template in `new-app` → docker.md).
 - Paths are `ghostmind/project/...` (singular), and key names match the schema item exactly unless you use `path#KEY`. When the user stores a third-party secret, hand them the exact `vault kv patch` command to paste.
-- Derived values use functions: `DATABASE_URL=concat("postgres://", $PGUSER, ":", $PGPASSWORD, "@", $PGHOST, "/", $DB_NAME)`. Look anything else up in the docs (`https://varlock.dev/reference/functions/`) rather than guessing.
+- Derived values use functions: `DATABASE_URL=concat("postgres://", $DB_USER, ":", $DB_PASSWORD, "@", $DB_HOST, "/", $DB_NAME)`. Look anything else up in the docs (`https://varlock.dev/reference/functions/`) rather than guessing.
 - **Never rename or remove a shared key** (anything under `ghostmind/global/`) without first grepping every `.env.schema` under `/Volumes/Projects` that reads it, and asking the user. Add the new key alongside instead; remove the old one only when nothing reads it.
 - **Every Cloudflare credential is named after its domain, never a generic name.** A tunnel certificate is valid for one zone, so the key says which: `CLOUDFLARED_<DOMAIN>`, the domain in capitals with dots as underscores.
   - *dev zone:* `ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`, read by every dev tunnel.
@@ -108,9 +108,9 @@ Rules:
 | Where | How |
 |---|---|
 | Host scripts / routines | `varlock run -- bash scripts/x.sh`, from the **app folder** (varlock only looks for `.env.schema` in the cwd) |
-| A host script that needs prod config (Terraform prod, an EAS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
+| A host script that needs prod config (Terraform prod, an iOS publish) | the script re-executes itself: `[ -n "${INNER:-}" ] \|\| exec env APP_ENV=prod VAULT_JWT_ROLE= INNER=1 varlock run -- bash "$0" "$@"`. Your own token is used, and the empty role skips the pod-only login |
 | A child that needs the Vault token (scripts calling the `vault` CLI, a Compose app passing it to its container) | `varlock run --include-internal -- …`: `VAULT_TOKEN` is internal, and without the flag the child gets it **empty** |
-| Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …`, as the `database` skill's `create_db` does |
+| Only part of the schema can resolve yet (bootstrapping the secrets it points to) | `varlock run --filter KEY1,KEY2,… -- …` |
 | A Compose app in dev (non-Kubernetes targets only; for `${PORT}` interpolation) | `varlock run --include-internal -- docker compose -f docker/compose.dev.yaml up` |
 | Inside a container (dev and prod pods) | `ENTRYPOINT ["varlock","run","--","/entrypoint.sh"]` (see `new-app`) |
 | GitHub Actions | `dmno-dev/varlock-action@v1`, or `varlock run --` in a step |

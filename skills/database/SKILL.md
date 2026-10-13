@@ -1,44 +1,44 @@
 ---
 name: database
 description: >-
-  Postgres for Ghostmind projects: create a database and role on the shared AWS RDS, run Hasura on it,
-  and manage migrations. Use when an app needs a database, a new DB/role/connection string, Hasura
-  metadata or migrations, or when choosing how an app talks to Postgres.
+  Postgres for Ghostmind projects: create a database and role on the shared Postgres server (the db project),
+  run Hasura on it, and manage migrations. Use when an app needs a database, a new DB/role/connection string,
+  Hasura metadata or migrations, or when choosing how an app talks to Postgres.
 ---
 
 # Database
 
-Every product's data lives on **one shared AWS RDS Postgres** instance. The admin login is `ghostmind/global/postgres` (`PGHOST`, `PGUSER`, `PGPASSWORD`). Each project gets its **own databases and its own role**, never the admin login. The API layer is a **Hasura** container per project. References: `/Volumes/Projects/format/db` (dev, `scripts/create-db.sh`) and `/Volumes/Projects/tags/db` (dev + prod, migrations applied in the container); older: `potion/db`.
+Every product's data lives on **one shared Postgres server per environment**, run by the `db` project (`/Volumes/Projects/db`, read its `README.md` and `CLAUDE.md` first):
 
-For read-only exploration of any DB, use the `toolkits:postgres` skill.
+| | Dev | Prod |
+|---|---|---|
+| Cluster | the M1's (kube context `m1`), namespace `db` | ghostmind k3s (context `ghostmind`), namespace `db` |
+| Address, from a pod | `db-postgres.db.svc.cluster.local:5432` | the same name |
+
+The address is kept once, in Vault: `ghostmind/global/postgres#DB_HOST`. Each project gets its **own databases and its own role**, never the administrator's login. The API layer is a **Hasura** container per project. References: `/Volumes/Projects/format/db` and `/Volumes/Projects/tags/db` (migrations applied in the container); older: `potion/db`.
+
+Both servers are shared infrastructure: ask before anything that creates, changes or removes a role or a database, and every time for prod. To look at what is on a server, use the `db` project's routines (`cd /Volumes/Projects/db/postgres && run routine list`, `run routine psql`; `DB_CONTEXT=ghostmind` in front for prod).
 
 ## Create a project database
 
-1. **Names:** database `<project>_<app>_<env>` (underscores, e.g. `potion_db_dev`, `potion_db_prod`). Role `<project>_<env>`. A migrated project keeps its existing database names (tags: `tags-db-local`, `tags-db-prod`); don't move data to match the convention.
-2. **Create the role and DB** with `scripts/create-db.sh`. Copy `/Volumes/Projects/format/db/scripts/create-db.sh` and change `PROJECT`. It handles three traps:
-   - **The schema can't resolve yet.** The db schema needs `DB_USER`/`DB_PASSWORD`/`DB_NAME` from the Vault path this very script creates, so a plain `varlock run` refuses to start. Resolve only the admin login and the Vault token, in the `create_db` routine:
-     `varlock run --include-internal --filter PGHOST,PGUSER,PGPASSWORD,APP_ENV,VAULT_ADDR,VAULT_TOKEN -- bash scripts/create-db.sh dev`
-   - **No psql on the Mac.** The script runs psql in a throwaway container:
-     ```bash
-     psql() {
-       docker run --rm -i -e PGHOST -e PGUSER -e PGPASSWORD -e PGSSLMODE=require -e PGDATABASE=postgres \
-         postgres:17-alpine psql "$@"
-     }
-     ```
-   - **Re-runs are safe.** It creates the role and stores its password once. If the role exists but its Vault path doesn't (a previous run died in between), it sets a new password with `ALTER ROLE` and stores it. It runs `GRANT "<role>" TO CURRENT_USER` before `CREATE DATABASE ... OWNER`, which RDS admins need.
+1. **Names:** database `<project>_<app>_<env>` (underscores, e.g. `potion_db_dev`, `potion_db_prod`). The role takes the same name. A migrated project keeps its existing database names (tags: `tags-db-local`, `tags-db-prod`); don't move data to match the convention.
+2. **Create the role and DB in the `db` project**, not from the product: `cd /Volumes/Projects/db/postgres && run routine create_db <database>` (dev, the M1's cluster; `DB_CONTEXT=ghostmind` in front for prod, with a go-ahead). It makes a role of the same name that can only log in to that database, the database it owns, and stores `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` at `ghostmind/project/db/databases/<env>/<database>`. Safe to run again. A product holds no script for this.
 
-   *Done when `psql` as the new role connects to the new DB and `ghostmind/project/<project>/db/<env>` holds `DB_USER`, `DB_PASSWORD` and `DB_NAME`.*
-3. **Point the apps at it.** The app/Hasura schema builds the URL from project credentials, never the admin ones:
+   *Done when that Vault path exists and `run routine list` shows the database with its owner.*
+3. **Point the apps at it.** The app/Hasura schema builds the URL from the credentials that routine stored:
 
    ```bash
-   PGHOST=vaultSecret("ghostmind/global/postgres")
-   DB_USER=if(forEnv(prod), vaultSecret("ghostmind/project/<project>/db/prod"), vaultSecret("ghostmind/project/<project>/db/dev"))
    # @sensitive
-   DB_PASSWORD=if(forEnv(prod), vaultSecret("ghostmind/project/<project>/db/prod"), vaultSecret("ghostmind/project/<project>/db/dev"))
-   DB_NAME=if(forEnv(prod), vaultSecret("ghostmind/project/<project>/db/prod"), vaultSecret("ghostmind/project/<project>/db/dev"))
+   DB_USER=if(forEnv(prod), vaultSecret("ghostmind/project/db/databases/prod/<project>_db_prod"), vaultSecret("ghostmind/project/db/databases/dev/<project>_db_dev"))
    # @sensitive
-   HASURA_GRAPHQL_DATABASE_URL=concat("postgres://", $DB_USER, ":", $DB_PASSWORD, "@", $PGHOST, ":5432/", $DB_NAME, "?sslmode=require")
+   DB_PASSWORD=if(forEnv(prod), vaultSecret("ghostmind/project/db/databases/prod/<project>_db_prod"), vaultSecret("ghostmind/project/db/databases/dev/<project>_db_dev"))
+   DB_NAME=if(forEnv(prod), vaultSecret("ghostmind/project/db/databases/prod/<project>_db_prod"), vaultSecret("ghostmind/project/db/databases/dev/<project>_db_dev"))
+   DB_HOST=vaultSecret("ghostmind/global/postgres")
+   # @sensitive
+   HASURA_GRAPHQL_DATABASE_URL=concat("postgres://", $DB_USER, ":", $DB_PASSWORD, "@", $DB_HOST, ":5432/", $DB_NAME, "?sslmode=require")
    ```
+
+   The product's Vault role needs that path and `global/postgres` in its policy. Products made before the `db` project (format, relay, noice, agento, ensemble) keep their credentials at `ghostmind/project/<project>/db/<env>`; leave them there.
 
 ## Shape the schema around a workspace
 
@@ -57,4 +57,4 @@ Before the first migration, decide what the rows belong to. Strongly encouraged 
 
 ## Dropping
 
-Dropping a database is irreversible and shared RDS hosts other products. Always ask the user, name the exact database, and never touch a database outside the current project.
+Dropping a database is irreversible and the server hosts every other product. Always ask the user, name the exact database, and never touch a database outside the current project.

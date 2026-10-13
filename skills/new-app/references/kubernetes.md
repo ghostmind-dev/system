@@ -27,6 +27,7 @@ The dev pre-deploy hook (`k8s/dev-setup.sh` at the project root, shared by the a
 - **Prod changes only through a merge to main.** No `kubectl apply`, `edit` or `exec` against prod to change an app. Read-only checks (status, logs) are fine.
 - **`.dockerignore` is required** and excludes `node_modules`, `.next` and `dist`. Without it the Mac's `node_modules` is copied into the Linux image and hides the image's own. An image that installs no dependencies (cloudflared, Hasura) doesn't need one.
 - **A project with a `shared/` folder builds from the repo root** (potion, tags): TypeScript used by several backends lives in `shared/pure` and `shared/server` at the root and is imported through a `@shared/*` alias. Those apps set skaffold `context: ..` with `dockerfile: <app>/docker/Dockerfile`, list `shared/**` and `<app>/app/src/**` under `sync.infer`, use `context: .` in CI, and share ONE root `.dockerignore`; the Dockerfile copies `shared` next to the app so the image mirrors the repo. Changing `context` in a `skaffold.yaml` is not picked up by a running `skaffold dev`: stop it and start it again.
+- **An app that uses a package kept in the same repo** (block: `mcp` and `ui` use `lib/app`, the npm package the product is about) reads it as a `file:` dependency (`"@ghostmind-dev/block": "file:../../lib/app"`) and builds from the repo root the same way: `context: ..`, a Dockerfile that copies `lib/app` to the place it has in the repo before `npm install` (the dependency is a link to it), `lib/app/src/**` under `sync.infer`, and the root `.dockerignore`. An edit to the package then reaches the running app like an edit to the app. Reference: `/Volumes/Projects/block/ui` (`docker/Dockerfile`, `skaffold.yaml`; Vite also needs `server.fs.allow` to reach outside the app's folder).
 - **Never put a `Namespace` object in an app's files.** CI isn't allowed to create namespaces, and Skaffold would delete a shared namespace on Ctrl-C. The pre-deploy hook creates it.
 - **No file names a cluster.** `skaffold.yaml` has no `deploy.kubeContext`: `skaffold dev` deploys to the current kube context and builds on the current Docker context, which must be the same machine (Dev machines, below).
 
@@ -148,6 +149,18 @@ kubectl config use-context <machine> && docker context use <machine>
 
 Contexts live in `~/.kube/config` and `~/.docker/contexts`, per Mac, and **no file in a repo names one**: `skaffold.yaml` has no `deploy.kubeContext`, scripts and manifests name no cluster. The one thing a pin used to buy, never deploying dev to prod, is now a habit: look at `kubectl config current-context` before a dev routine.
 
+**Which machine.** The shared dev services run on the M1's cluster only: the users service and the shared Postgres. A product that signs people in or has a database therefore runs its dev there (`kubectl config use-context m1 && docker context use m1`). On another Mac's cluster their names do not resolve, and the app fails at its first sign-in or query, not at start. Do not get around it with a Tailscale address in the project's own Vault path: the schema would then differ from every other product's.
+
+**One command on another machine, without switching** (a check, a redeploy while the Mac stays on its own cluster): name both halves on the command line, where no file keeps them.
+
+```
+DOCKER_CONTEXT=m1 skaffold run --no-prune --kube-context m1
+```
+
+**Do not `git stash` (or switch branch and back) in a repo whose `skaffold dev` is running.** It sees the files go back, then forward, and can build while they are back: its cache then holds the new files' hash against an image made from the old ones, and every later change answers `Found Locally` with that old image (the pod keeps the old `.env.schema`, so a new variable never arrives). To get out without restarting anything: change the content of a file the image depends on, then `touch` the app's `.env.schema`. To compare with the last commit, use `git worktree` or `git show`.
+
+**Do not change the cluster under a running `skaffold dev`.** It reads `skaffold.yaml` again on every change and keeps the Docker daemon it started with: removing a `kubeContext` (or switching the kube context) while it runs sends the next deploy to the other cluster with an image that only the first machine has, and the pod fails with `can't be pulled`. Stop it, change, start it again; then delete the namespace it left on the wrong cluster (`bash k8s/remove.sh` on that context).
+
 **Another Mac's OrbStack over Tailscale** (the kube context's server is the tailnet address). Its Docker daemon cannot be an `ssh://` context: Skaffold reads the context but its built-in Docker client cannot dial `ssh://`, and fails after `Checking cache` with `Cannot connect to the Docker daemon at ssh://<host>`, with or without `useDockerCLI`. Forward the remote socket over SSH to a local socket and point the Docker context at that:
 
 ```
@@ -178,6 +191,7 @@ ingress:
   - service: http_status:404
 ```
 
+- **Both environments, from the first day.** `config/ingress.dev.yaml` and `ingress.prod.yaml`, `k8s/tunnel.dev.yaml` and `tunnel.yaml`, a `skaffold.yaml` and the `dev` routines like any app, and a herdr tab. The dev tunnel's credentials volume (`tunnel-creds`) is made by `k8s/dev-setup.sh`. A tunnel written for prod only fails `comply`.
 - **Prod:** two replicas on different servers (two connectors), running the existing tunnel from **its own credentials JSON** in Vault (`ghostmind/project/<project>/tunnel/prod#TUNNEL_CREDENTIALS`), written to a RAM `emptyDir`. That credential can only run this one tunnel: no account certificate in prod, and no DNS rights.
 - **Dev:** the `ghostmind.app` account certificate (`ghostmind/global/cloudflare#CLOUDFLARED_GHOSTMIND_APP`) creates the dev tunnel and routes DNS; its credentials JSON lives on a volume kept across runs.
 - **No Ingress and no Gateway for now.** The tunnel runs as 2 copies and sends each hostname straight to its Service. If the cluster ever consolidates onto one tunnel, use Gateway API, never classic Ingress (ingress-nginx is retired).

@@ -32,20 +32,76 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 ## Steps for a new project or app
 
 1. **Manifests:** `<app>/k8s/<app>.yaml` per `new-app` → kubernetes.md.
-2. **Workflows:** copy `_deploy-k8s.yaml` unchanged from portal, and write one `deploy.yaml` for the project that calls it once per app, ordered with `needs:` (db → apps → tunnel), so the tunnel never sends traffic to a missing app:
+2. **Workflows:** copy `_deploy-k8s.yaml` unchanged from portal, and write one `deploy.yaml` for the project that calls it once per app. It deploys in two ways:
+
+   - **A merge deploys only what it changed.** A change in `mcp/` builds and rolls out the mcp, and nothing else: the db is not restarted, the ui is not rebuilt, the tunnel keeps its connections. An app is deployed when its own folder changed, or something else its image is built from (`shared/`, a package of the same repo such as `lib/`), which the app's word names after a `+`.
+   - **Everything, from beginning to end**, in order (db → apps → tunnel): on a run started by hand (`workflow_dispatch`, which also takes a list of apps), and whenever the workflow files themselves change. That is the first deploy of a project, a rebuild after a cluster incident, and the check that the whole chain still works.
+
+   A first job, `changes`, decides which apps this run deploys; each app's job reads its answer. `needs:` keeps the order among the jobs that do run, so the tunnel never sends traffic to a missing app:
 
    ```yaml
+   on:
+     push:
+       branches: [main]
+       paths: [db/**, mcp/**, ui/**, tunnel/**, .github/workflows/deploy.yaml, .github/workflows/_deploy-k8s.yaml]
+     workflow_dispatch:
+       inputs:
+         apps: { description: "all, or the apps to deploy, separated by spaces (mcp ui)", default: all }
    jobs:
-     ui:
+     changes:
+       runs-on: ubuntu-latest
+       permissions: { contents: read }
+       outputs: { db: "${{ steps.pick.outputs.db }}", mcp: "${{ steps.pick.outputs.mcp }}", ui: "${{ steps.pick.outputs.ui }}", tunnel: "${{ steps.pick.outputs.tunnel }}" }
+       steps:
+         - uses: actions/checkout@v4
+           with: { fetch-depth: 0 }
+         - id: pick
+           env: { ASKED: "${{ inputs.apps }}", BEFORE: "${{ github.event.before }}" }
+           run: bash .github/workflows/changes.sh db mcp ui tunnel >> "$GITHUB_OUTPUT"   # mcp+shared when its image is built from shared/ too
+     db:
+       needs: changes
+       if: needs.changes.outputs.db == 'true'
        uses: ./.github/workflows/_deploy-k8s.yaml
        permissions: { contents: read, packages: write, id-token: write }
        secrets: inherit
-       with: { project: <project>, app: ui, context: <folder>, dockerfile: <folder>/docker/Dockerfile, manifest: <folder>/k8s/ui.yaml }
-     tunnel:
-       needs: ui
+       with: { project: <project>, app: db, context: db, dockerfile: db/docker/Dockerfile, manifest: db/k8s/db.yaml }
+     mcp:
+       needs: [changes, db]
+       # a job whose `needs` was skipped is skipped too, unless it says otherwise: run after db when db ran, alone when it did not
+       if: ${{ !failure() && !cancelled() && needs.changes.outputs.mcp == 'true' }}
        uses: ./.github/workflows/_deploy-k8s.yaml
        …
    ```
+
+   `.github/workflows/changes.sh` prints one `<app>=true|false` line per app it is given:
+
+   ```bash
+   #!/usr/bin/env bash
+   # Which apps this run deploys. By hand: the apps asked for, or all. On a merge: the apps whose folder changed.
+   # Each word is an app's folder, with whatever else its image is built from after a +:  db mcp+shared ui+shared tunnel
+   set -euo pipefail
+   all() { for word in "$@"; do echo "${word%%+*}=true"; done; }
+   if [ -n "${ASKED:-}" ]; then
+     [ "$ASKED" = all ] && { all "$@"; exit; }
+     for word in "$@"; do app=${word%%+*}; case " $ASKED " in *" $app "*) echo "$app=true" ;; *) echo "$app=false" ;; esac; done; exit
+   fi
+   # A first push, or a history that was rewritten: there is nothing to compare with, so everything goes.
+   git cat-file -e "${BEFORE:-}^{commit}" 2>/dev/null || { all "$@"; exit; }
+   changed=$(git diff --name-only "$BEFORE" HEAD)
+   # The workflows changed: prove the whole chain.
+   grep -q '^\.github/workflows/' <<<"$changed" && { all "$@"; exit; }
+   for word in "$@"; do
+     app=${word%%+*}; folders=${word//+/|}
+     # an app built from the repo root also depends on the root .dockerignore
+     [ "$word" != "$app" ] && folders="$folders|\.dockerignore"
+     if grep -Eq "^($folders)(/|$)" <<<"$changed"; then echo "$app=true"; else echo "$app=false"; fi
+   done
+   ```
+
+   - **An app that needs a new column** still waits for the db: the merge touches both folders, both jobs run, and `needs: [changes, db]` orders them.
+   - **Keep the trap in mind when adding a job:** without `!failure() && !cancelled()` in its `if`, a job is skipped whenever a job it `needs` was skipped, so a merge that touches only the ui would deploy nothing.
+   - **Not yet run in a project.** Every `deploy.yaml` in the reference projects (portal, tags, format, billing) still redeploys all its apps on each merge. The first project to take this pattern proves it: one merge that touches one app (only its job runs), one that touches two (both, in order), one run by hand (all). Then make it the reference here and remove this line.
+
 3. **Prod init, once per project and again whenever an app or a prod secret path is added:** `bash k8s/prod-init.sh` at the project root (routine `prod_init`). Copy it unchanged from `/Volumes/Projects/magneto/k8s/prod-init.sh`: it takes everything from the project's own files, so nothing in it is project-specific. Without a flag it prints the plan and changes nothing; `--apply` does every `todo` line and is safe to run again.
    - **Cluster:** the namespace (the `namespace:` of the manifests) and the RoleBinding `ci-deploy`, which lets CI of this repo (the git remote, `main` only) deploy into that namespace and nowhere else (built-in role `edit`). The repo and the project may have different names.
    - **Vault:** for each app whose manifest sets `VAULT_JWT_ROLE`, the policy `<project>-<app>` (read-only on exactly the prod paths its `.env.schema` points to) and the role `auth/k8s/role/<project>-<app>` bound to its service account (`new-app` → kubernetes.md).

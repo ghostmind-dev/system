@@ -11,6 +11,7 @@ The most common product shape is a remote MCP, a web app and often a native app,
 
   `potion/mcp` predates this and has none of the three; don't copy its OAuth. `PUBLIC_DOMAIN` must be the public host (`<app>.ghostmind.dev`), and the OAuth endpoints and `/.well-known/oauth-*` must route to this server on that host (`system` skill, Domains), or the redirects and discovery point at the wrong place.
 - **The web app signs in through the same server** (OAuth + PKCE), so there is one auth system for web, MCP and native. The default web app is static React + TanStack on Vite: `/Volumes/Projects/format/ui`. Use Next.js + next-auth (`potion/ui`) only when the app needs server rendering or its own API routes.
+- **One host in dev too, and it is the tunnel's.** A product with a web app or a remote MCP has a `tunnel/` app from its first day, with both environments: `<app>.ghostmind.app` in dev and `<app>.ghostmind.dev` in prod, routed by path the same way (`/mcp`, `/oauth/*`, `/.well-known/oauth-*` and `/api/*` to the MCP's Service, the rest to the web app's). The MCP's dev `PUBLIC_URL` is `https://<app>.ghostmind.app`, that address is in its allowed redirects and in the Google client's redirect URIs, and the project's `.mcp.json` points Claude Code at `https://<app>.ghostmind.app/mcp`. The web app's dev server may also proxy the same paths (`server.proxy`, target from a `MCP_URL=http://<project>-mcp:<port>` schema variable) so that `localhost:<ui port>` works for someone at the machine; it needs `server.allowedHosts` for the tunnel to reach it. Do not build dev on `localhost` alone and leave the tunnel for the day of the prod deploy: block did, and its dev host, its redirect URIs and its docs all had to be changed afterwards. Reference: `/Volumes/Projects/block/tunnel`, `block/mcp/.env.schema` and `block/ui/app/vite.config.ts`.
 - **A native app signs in to the same server** with RFC 8252 loopback + PKCE and keeps tokens in the Keychain: `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift`.
 - **One Google OAuth client per product.** `GOOGLE_OAUTH_CLIENT_ID` and `GOOGLE_OAUTH_CLIENT_SECRET` live once at `ghostmind/project/<project>/auth` (singular `project`), and every schema points there. Shared signing secrets (`HASURA_GRAPHQL_JWT_SECRET`, the state HMAC key) live there too.
 
@@ -67,6 +68,80 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 ## Bring-your-own OpenRouter
 
 When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/format`, and `potion/agent/ai-connection.ts` for the same pattern.
+
+## Payments: billing
+
+A product that sells a plan does not integrate Stripe. It uses **billing** (`/Volumes/Projects/billing`, repo `ghostmind-app/billing`): one Stripe account, one webhook and one Stripe customer per person, for every product. The product gets no Stripe key, no Stripe package, no webhook route and no billing table. Its README has the contract and stays the source of truth; this is the order of work.
+
+**In the billing repo** (dev first):
+
+1. Add the product to `api/app/catalogue.json`: its key, name, its dev and prod origins (`return_origins`: the only addresses Stripe may send a person back to) and its plans, amounts in cents.
+2. `cd api && run routine catalogue`. It creates the Stripe product and prices in test mode, found by lookup key (`<product>_<plan>_monthly`), and the rows in billing's database. Nothing is deleted; a changed amount makes a new price for new buyers.
+3. `run routine product_token <product> dev`. It stores the product's one credential at `ghostmind/project/billing/clients/<product>/dev#BILLING_TOKEN`.
+
+**In the product:**
+
+4. Two lines in the `.env.schema` of every app whose server reads a plan or asks for a link. That is every backend that imports the product's billing client, not only the web (potion: ui, mcp, native, chrome):
+
+   ```bash
+   # @type=url
+   BILLING_ENDPOINT=if(forEnv(prod), vaultSecret("ghostmind/global/billing/prod#BILLING_ENDPOINT"), vaultSecret("ghostmind/global/billing#BILLING_ENDPOINT"))
+   # @sensitive
+   BILLING_TOKEN=if(forEnv(prod), vaultSecret("ghostmind/project/billing/clients/<product>/prod#BILLING_TOKEN"), vaultSecret("ghostmind/project/billing/clients/<product>/dev#BILLING_TOKEN"))
+   ```
+
+5. Four server-side calls, each with `Authorization: Bearer $BILLING_TOKEN`. The browser never calls billing.
+
+   | When | Call | Then |
+   |---|---|---|
+   | A paid feature is gated | `GET /api/v1/entitlement?user_id=` | `plan` is `free` or the plan key. Cache about a minute |
+   | The person clicks upgrade | `POST /api/v1/checkout` `{ user_id, plan, success_url, cancel_url }` | redirect the browser to `url` |
+   | The person clicks manage | `POST /api/v1/portal` `{ user_id, return_url }` | redirect the browser to `url` |
+   | The person deletes their account | `POST /api/v1/cancel` `{ user_id }` | their subscriptions for this product end now |
+
+   - `user_id` is the shared `users.userId` (Google sign-in, above), never a provider id or an id of the product's own. Billing asks the users service and refuses one it does not know.
+   - After checkout the person lands on `success_url` a moment before Stripe's webhook reaches billing. Show "confirming" and read the entitlement again for a few seconds; do not grant access from the redirect.
+   - A refusal is `{ error, message }`; `already_subscribed` (409) means send them to the portal.
+   - When billing cannot be reached, keep the last answer you had for that person; with none, treat them as free and say payment status is unavailable. Never block sign-in on it.
+
+6. Test in dev against Stripe test mode: card `4242 4242 4242 4242`, any future date. `cd /Volumes/Projects/billing/api && run routine e2e <email>` proves billing's own side. The product's side is quickest from a signed-in browser tab on its dev address: `fetch` its own plan, checkout and portal routes and read the answers (free, two Stripe URLs; after a payment `pro`, and checkout refused).
+
+**For prod**, after billing itself is deployed: the catalogue sync through billing's mcp (`sync_catalogue`), `run routine product_token <product> prod`, then the product's `k8s/prod-init.sh --apply`, which adds the two prod paths to its Vault policy, then the merge to `main`. A product with no `prod-init.sh` (potion) adds the two paths to `vault/config/policies/<product>-<app>.hcl`, one file per app from step 4, and uploads each with `vault policy write`. The token and the policies come BEFORE the merge: a pod whose schema names a path its policy cannot read does not start.
+
+What a product may still do itself: decide what each plan unlocks, and count its own usage. Limits live in the product; who paid lives in billing.
+
+**Operating it** is through billing's Claude plugin (the skill `billing`): who pays for what, access given by hand, Stripe's events, reconcile. Its MCP has no public address: `run routine forward` (dev) or `forward_prod` in `billing/mcp`.
+
+**The reference for the product's side is tags**: `/Volumes/Projects/tags/shared/server/billing.ts` (one client for its three backends: the plan of a person kept a minute, asked again before a refusal, the last answer used when billing is down; the two links) and `city/app/src/app/api/stripe/*` (three small routes). Potion is the second one, with four backends: `/Volumes/Projects/potion/shared/server/billing.ts` adds the call to `/cancel` and keeps the product's limits beside the client.
+
+How it holds together, for when something looks wrong:
+
+- **One Stripe account, one webhook endpoint per mode** (test: `billing.ghostmind.app`, live: `billing.ghostmind.dev`). No product has a webhook. A product that had one before moving deletes its endpoint in Stripe at cutover, or Stripe keeps calling a route that is gone.
+- **One Stripe customer per person, one subscription per person and product.** The same person can be Pro in one product and free in another; the Stripe portal lists all of theirs.
+- **Dev and prod share nothing secret.** Dev is Stripe test mode with its own signing key and tokens; prod's are under `…/prod` paths a dev session cannot read. A dev token never opens prod.
+- **Moving a product resets everyone to free**, unless their subscriptions are imported: billing knows only what it sold or was told. Before the merge to `main`, list what the product refuses to a free person (potion: its whole MCP) and decide with the owner: lift the gate, subscribe again, or a grant.
+- **Moving a product that already has payers:** each of their Stripe subscriptions gets the metadata `user_id`, `product`, `plan`, then `reconcile_with_stripe` imports them. With a handful of payers, cancelling and subscribing again is simpler and leaves one customer per person.
+
+## Html written by a model: the block package
+
+When a product shows html that an AI (or a person) wrote, such as a chart in a note, a dashboard, the box under the mouse on a map or a card in a list, it shows it with **`@ghostmind-dev/block`** (`/Volumes/Projects/block/lib`, plain ESM JavaScript, no dependency, no build). Potion, Relay and Tags each wrote their own frame before the package existed; a new product never does. Read `/Volumes/Projects/block/README.md` first.
+
+What the package is, and what stays the product's:
+
+| The package | The product |
+|---|---|
+| The frame: `sandbox="allow-scripts"` and a policy with no network, no storage and no way to the page. It does not loosen | Where blocks are kept (a table, a note's text) |
+| Libraries: a block names any npm package on its first lines (`<!-- block:use three@0.186 -->`) and gets it as a global. Fetched from jsDelivr by the reader's browser; no cache of ours | The MCP tools that take a block's source, and the skill that teaches writing one |
+| Slots: `defineSlot` declares a place and its room (width, height, whether it is clicked); `mount` keeps a block inside it; `slotText` says the same numbers to the model | Which slots exist and how big each is |
+| The bridge: `defineHost({ name, calls, events })` makes `window.<name>` in the block; `serve` answers each call with the product's own function | What the block may read and change (`potion.self()`, `relay.act()`), with the product's own permissions, and asking the person before a write |
+
+- **On a web page:** `mount(container, html, { slot, host, handlers, loader })` from `@ghostmind-dev/block/web`. In React, wrap it in one effect: `/Volumes/Projects/block/ui/app/src/frame.tsx`.
+- **Anywhere else** (a server that renders the document, a React Native web view): `parse`, `documentOf` and `serve`, which are text in and text out.
+- **Declare the slots once, on the server**, and give the same objects to `mount` and to the tool descriptions (`/Volumes/Projects/block/mcp/app/src/blocks/slots.ts`, `contract.ts`). A size written by hand in a tool description and again in the page's CSS drifts: tags stated its hover width three different ways.
+- **Bring a block's libraries before saving it** (`makeLoader().loadAll`, as `block/mcp/app/src/blocks/check.ts` does), and refuse the save with the reason when one cannot be brought. The model then fixes the name instead of leaving a block that shows an error.
+- **Show what the block threw.** `mount`'s `onError` gives the message; a block that throws is otherwise an empty box nobody can explain.
+- **Never loosen the frame for a feature.** A block that needs something from outside gets a call on the product's host.
+- Until it is on npm, a product in another repo copies `lib/app/src` or depends on the git repo; block's own apps read it as a `file:` dependency and build from the repo root.
 
 ## Tunnel (only if something is public)
 

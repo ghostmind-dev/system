@@ -20,9 +20,10 @@ New apps replicate **reference apps** (portal for how an app is packaged and run
 | `new-app` | Scaffolding a project or service (web, remote MCP, worker, tunnel, non-web): Kubernetes manifests, Skaffold, the image |
 | `secrets` | `.env.schema`, the Vault layout, adding secrets, debugging variables |
 | `deploy` | Deploying to the cluster through GitHub Actions; the non-default Compose host flow, server hardening, debug sessions |
-| `database` | DB and role on the shared RDS, Hasura, migrations |
+| `database` | DB and role on the shared Postgres (the db project), Hasura, migrations |
 | `migrate` | Moving a legacy app (`.env.base`, `run vault`, `run custom`) onto the new setup |
 | `comply` | Auditing a project against the current rules (`scripts/check.sh`) and fixing drift |
+| `debrief` | After a piece of work: what it taught, written into these skills and the audit script (typed by hand: `/system:debrief`) |
 
 ## Status
 
