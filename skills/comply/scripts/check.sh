@@ -84,6 +84,14 @@ for S in "${SERVICES[@]}"; do
   done
   [ -f "$S/scripts/prod.sh" ] && ! has 'force-recreate' "$S/scripts/prod.sh" && \
     say WARN prod-sh "$S/scripts/prod.sh" "add --force-recreate, or the deploy's restart check fails on unchanged images"
+  # an Expo app: the dev build is told apart from prod on the phone (new-app/references/non-web.md)
+  X="$S/app/app.config.ts"
+  if [ -f "$X" ] && has "from 'expo/config'" "$X"; then
+    { has 'icon-dev\.png' "$X" && [ -f "$S/app/assets/images/icon-dev.png" ]; } || \
+      say WARN expo-dev "$X" "the dev app needs its own icon: assets/images/icon-dev.png (the prod mark on amber), set as ios.icon when ENV is not prod"
+    has "CFBundleDisplayName:.*' dev'|CFBundleDisplayName:.*dev'" "$X" || \
+      say WARN expo-dev "$X" "the dev app's name under the icon must end in \" dev\": infoPlist.CFBundleDisplayName '<Name> dev' when ENV is not prod"
+  fi
   # docker
   D="$S/docker"
   if [ -d "$D" ]; then
