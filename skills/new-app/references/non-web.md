@@ -78,6 +78,15 @@ credential. If a step seems to need one of those, something above was skipped.
   key from Vault, written to a temporary folder for the length of the run. A mode that does everything but
   upload (`mobile_archive`) proves a change before Apple sees it. The script is the same in every project below
   its first lines. References: `relay/native/scripts/publish.sh` (also in `potion` and `tags`).
+- **Publish from a copy of `main`, one build at a time.** The publish writes `ios/` again for the prod app and
+  takes ten minutes of the machine, so run it in a worktree of `origin/main` (`git worktree add`, then
+  `run routine mobile_publish` in its `native/`), not in the folder the dev build lives in. The version
+  question is answered on standard input when no person is there: `printf 'p\n' | run routine mobile_publish`.
+  Say you are starting it: two sessions each told to publish the same app stopped each other's build
+  (relay, 2026-10-13). After "Uploaded", the new version in `app.json` goes to `main` as a change of its own,
+  that one file; left uncommitted it is carried into somebody's next commit.
+- **A build nobody ran is not a tested build.** Uploading is not proof: say in the report that TestFlight is
+  the first run, and what to press there.
 - **Before the App Store:** an app that signs in with Google only must also offer Sign in with Apple. With the
   OAuth proxy that is a change to the proxy, shared by every product that uses it. Tell the user early.
 

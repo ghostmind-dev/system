@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 # Audit a Ghostmind project folder against the system's conventions.
-#   check.sh <project-dir>
+#   check.sh <project-dir>      (a bare name is looked for beside the system repo: check.sh block)
 # Prints one finding per line:  LEVEL  RULE  path  message
 #   FAIL = breaks a rule of the system (fix it)   WARN = likely drift (look at it)
 # Exit code: 1 if any FAIL, else 0. Read-only: it never changes anything.
 set -uo pipefail
 
-ROOT=$(cd "${1:?usage: check.sh <project-dir>}" && pwd)
+TARGET=${1:?usage: check.sh <project-dir>}
+# A project given by its name alone is the folder of that name beside the system repo. Without this, a name
+# that is not a folder here was audited as the folder the command ran from, with findings about nothing.
+[ -d "$TARGET" ] || { BESIDE="$(cd "$(dirname "$0")/../../../.." && pwd)/$TARGET"; [ -d "$BESIDE" ] && TARGET=$BESIDE; }
+[ -d "$TARGET" ] || { echo "check.sh: no project folder \"$1\" (give its path)" >&2; exit 2; }
+ROOT=$(cd "$TARGET" && pwd)
 FAILS=0
 say() { # level rule path message
   local rel=${3#"$ROOT"/}; [ "$3" = "$ROOT" ] && rel=.

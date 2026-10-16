@@ -100,7 +100,7 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 
    - **An app that needs a new column** still waits for the db: the merge touches both folders, both jobs run, and `needs: [changes, db]` orders them.
    - **Keep the trap in mind when adding a job:** without `!failure() && !cancelled()` in its `if`, a job is skipped whenever a job it `needs` was skipped, so a merge that touches only the ui would deploy nothing.
-   - **Not yet run in a project.** Every `deploy.yaml` in the reference projects (portal, tags, format, billing) still redeploys all its apps on each merge. The first project to take this pattern proves it: one merge that touches one app (only its job runs), one that touches two (both, in order), one run by hand (all). Then make it the reference here and remove this line.
+   - **Proven in billing** (2026-10-13): a merge that changed the workflows deployed all four apps in order, and the next one, which touched only `mcp/`, ran the mcp's job and skipped db, api and tunnel. Block and tags use the same file; a merge that touches two apps has not been watched yet. Copy `deploy.yaml` and `changes.sh` from `/Volumes/Projects/billing/.github/workflows/` (apps built from the repo root: `/Volumes/Projects/tags/.github/workflows/`). Potion still has one workflow file per app, an older layout: do not copy it.
 
 3. **Prod init, once per project and again whenever an app or a prod secret path is added:** `bash k8s/prod-init.sh` at the project root (routine `prod_init`). Copy it unchanged from `/Volumes/Projects/magneto/k8s/prod-init.sh`: it takes everything from the project's own files, so nothing in it is project-specific. Without a flag it prints the plan and changes nothing; `--apply` does every `todo` line and is safe to run again.
    - **Cluster:** the namespace (the `namespace:` of the manifests) and the RoleBinding `ci-deploy`, which lets CI of this repo (the git remote, `main` only) deploy into that namespace and nowhere else (built-in role `edit`). The repo and the project may have different names.
@@ -123,6 +123,9 @@ The repo needs only two secrets: `TS_OAUTH_CLIENT_ID` and `TS_OAUTH_SECRET`. No 
 - **OIDC login refused:** the project's namespace or RoleBinding is missing (run `k8s/prod-init.sh`, step 3), or the run isn't on `main`.
 - **Image pull error:** the `ghcr` pull secret is refreshed on each deploy with a token that dies with the job. Nodes share images with each other, so this shows up only on an image no node has. Re-run the deploy.
 - **Rolling back:** revert the commit and merge. Don't `kubectl rollout undo` on prod.
+- **No run started.** A minute after a merge, `gh run list -R <repo> --limit 3` shows nothing new: the push that created `main`, and now and then a pull request merged from the command line, start no workflow. Start it by hand (`gh workflow run deploy --ref main -f apps=all`, or the app's own workflow where there is one per app) and say so in the report. Do not conclude the deploy happened from the merge alone.
+- **A new repo's default branch is the first one pushed.** `gh repo create … --source .` from `dev` makes `dev` the default; set it before the first deploy: `gh repo edit <repo> --default-branch main`.
+- **GitHub's API answers 502 while a run is watched** (`gh run watch` stops, `gh run view` fails). The run goes on. Read the result from the cluster instead: the pods' age (`kubectl -n <project> get pods`) and the public URL, then the run once the API answers.
 
 ## Not on the cluster
 
