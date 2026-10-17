@@ -228,18 +228,6 @@ for S in "${SERVICES[@]}"; do
   fi
 done
 
-# ---------- AI models come from tokens ----------
-# A product that calls OpenRouter takes what to offer, its defaults and the replacement of a retired model from the
-# tokens service, not from a list in its code (new-app blocks.md, AI models: tokens). tokens itself is the service.
-if [ "$(basename "$ROOT")" != tokens ]; then
-  # the whole project, shared code too (potion keeps its AI code in agent/, which is not a service folder)
-  NOT_SOURCE=(--exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.next --exclude-dir=build --exclude-dir=ios --exclude-dir=.claude --exclude-dir=.git)
-  CALLS=$(grep -rlE "https://openrouter\.ai" "$ROOT" --include='*.ts' --include='*.mts' --include='*.tsx' --include='*.js' --include='*.mjs' "${NOT_SOURCE[@]}" 2>/dev/null | head -1)
-  if [ -n "$CALLS" ] && ! grep -rqs --include=.env.schema "^TOKENS_ENDPOINT=" "$ROOT" "${NOT_SOURCE[@]}" 2>/dev/null; then
-    say WARN tokens "$CALLS" "calls OpenRouter but no .env.schema declares TOKENS_ENDPOINT: the models offered, the default and the replacement of a retired model come from the tokens service (new-app blocks.md, AI models: tokens)"
-  fi
-fi
-
 # ---------- port collisions across projects ----------
 # host side of "HOST:CONTAINER" / "IP:HOST:CONTAINER" port mappings in compose files
 ports_of() { grep -hE '^\s*-\s*"?[^ #]*[0-9]+:[0-9]+"?\s*(#.*)?$|ports:\s*\[' "$@" 2>/dev/null \
