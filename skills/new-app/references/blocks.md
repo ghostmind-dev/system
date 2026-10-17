@@ -69,6 +69,41 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 
 When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/format`, and `potion/agent/ai-connection.ts` for the same pattern.
 
+The key is the product's; **which models it offers is not**: that comes from tokens (next section).
+
+## AI models: tokens
+
+Every product that offers or calls an AI model gets **what to offer from the tokens service** (`/Volumes/Projects/tokens`; its README has the contract and stays the source of truth). tokens decides, for every product at once: the models offered in each category (`brain`, `vision`, `speech`…), the default, a product's own additions and removals, and **what replaces a model OpenRouter retires or drops**. It reads OpenRouter's catalogue live (prices, expiry dates) and watches it every six hours. The person's OpenRouter key stays in the product (*Bring-your-own OpenRouter*); tokens holds no key and nothing about a person.
+
+Why it is a rule (2026-10-16): five products each kept a hand-written model list (format, Potion, Tags, relay, agento), and one of them found its default brain retiring four days ahead, by chance. A model list in a product's code goes stale without anyone noticing, and a retired model fails every call that uses it.
+
+**In the tokens repo:** `cd api && run routine product_token <product> dev` (the product must be known to tokens: the mcp's `add_product`). It stores the product's one credential at `ghostmind/project/tokens/clients/<product>/dev#TOKENS_TOKEN`. A product needs its own models (or fewer): the owner says so through the tokens mcp (`offer_model` / `withdraw_model` with `product`), never in the product's code.
+
+**In the product:**
+
+1. Two lines in the `.env.schema` of every app whose server shows a model picker or calls a model:
+
+   ```bash
+   # @type=url
+   TOKENS_ENDPOINT=if(forEnv(prod), vaultSecret("ghostmind/global/tokens/prod#TOKENS_ENDPOINT"), vaultSecret("ghostmind/global/tokens#TOKENS_ENDPOINT"))
+   # @sensitive
+   TOKENS_TOKEN=if(forEnv(prod), vaultSecret("ghostmind/project/tokens/clients/<product>/prod#TOKENS_TOKEN"), vaultSecret("ghostmind/project/tokens/clients/<product>/dev#TOKENS_TOKEN"))
+   ```
+
+2. Three server-side calls, each with `Authorization: Bearer $TOKENS_TOKEN`. The browser and the native apps never call tokens; they get the list from the product's server.
+
+   | When | Call | Then |
+   |---|---|---|
+   | A model picker is shown | `GET /api/v1/catalog?category=brain` | show `models` (name, note, price) and preselect `default`. Cache a few minutes |
+   | Before calling a model for a person | `POST /api/v1/resolve` `{ category, model }` (model empty: the default) | call `model`, and give OpenRouter `[model, ...fallbacks]` as its `models` field, so a model withdrawn without notice is caught there too. Cache per model a few minutes |
+   | Optionally, to tell the person | `GET /api/v1/notices` | each notice has the sentence tokens proposes ("X retires on … Y will be used instead"). By default a product replaces quietly and shows nothing |
+
+3. **Delete the product's own model list**, its default and any "retired → replacement" table. What the product still writes in code is only which category each feature uses.
+
+**The product never waits on tokens.** When tokens cannot be reached, it uses the last answer it had, and with none, the person's model as saved. A dictation, a chat or a summary never fails because tokens is down.
+
+Status (2026-10-16): tokens runs on the M1's dev cluster. Its prod, and the shared key `ghostmind/global/tokens#TOKENS_ENDPOINT`, are not created yet (tokens' README → *Prod*). No product calls it yet; format is first. Until a product is moved, `comply`'s check reports it.
+
 ## Payments: billing
 
 A product that sells a plan does not integrate Stripe. It uses **billing** (`/Volumes/Projects/billing`, repo `ghostmind-app/billing`): one Stripe account, one webhook and one Stripe customer per person, for every product. The product gets no Stripe key, no Stripe package, no webhook route and no billing table. Its README has the contract and stays the source of truth; this is the order of work.

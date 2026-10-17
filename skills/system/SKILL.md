@@ -38,6 +38,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
    - **Across providers** (Hetzner ↔ Google Cloud, the M1 Mac…): Tailscale is allowed for running prod traffic, as a deliberate link. The node is tagged (tagged nodes don't expire), the ACL allows only that path, and the link is monitored. For a managed service with no persistent host (Cloud Run), use public HTTPS with auth instead.
    - **Shared users:** local users in dev (`state.users.svc.cluster.local:5090`) and the same Service on 5080 in prod, both through `DB_USERS_ENDPOINT` in Vault. Dev can't read the prod value.
    - **Billing:** the same way, through `BILLING_ENDPOINT` in Vault (`ghostmind/global/billing`, and `…/billing/prod`). A product never calls Stripe.
+   - **AI models:** the same way, through `TOKENS_ENDPOINT` in Vault (`ghostmind/global/tokens`, and `…/tokens/prod`). A product never keeps its own list of models.
    - **Dev and deploy** (the Mac, CI reaching the cluster API, SSH, debugging) use Tailscale.
    Inside the cluster: NetworkPolicies (default deny), no Istio, no Ingress for now (Gateway API if one tunnel ever fronts the whole cluster).
    Addresses: `/Volumes/Projects/home/networking.md`.
@@ -86,7 +87,7 @@ Every product starts from the same six parts. A new product gets all of them unl
 | **Database** | The product's own state: Hasura on the cluster | `/Volumes/Projects/tags/db` |
 | **MCP** | The app's actions as tools, stateless on the cluster | `/Volumes/Projects/potion/mcp` (transport) |
 | **Skills** | The Claude plugin that teaches the app's concepts and points at the MCP | `/Volumes/Projects/potion/plugin` |
-| **OpenRouter, the user's own** | Every AI feature runs on the key the user connects. We don't pay for inference, and a user who wants a heavier experience pays for their own | `/Volumes/Projects/format` (`ai_connections`) |
+| **OpenRouter, the user's own** | Every AI feature runs on the key the user connects. We don't pay for inference, and a user who wants a heavier experience pays for their own. **Which models are offered is not the product's to decide**: the model lists, the defaults and what replaces a model OpenRouter retires come from the **tokens** service (`new-app` → blocks.md → *AI models: tokens*) | `/Volumes/Projects/format` (`ai_connections`); `/Volumes/Projects/tokens` |
 
 A product works without an OpenRouter key: AI features stay off until the user connects one. Anything public adds a tunnel, with its dev and its prod side together; a native app (iOS, Mac) is added on top of the core and signs in to the same OAuth server.
 
@@ -130,6 +131,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
+| **AI models a product offers** (tokens) | The product offers or uses any AI model (a brain, vision, speech…) | `/Volumes/Projects/tokens` (its README: the contract). Every product asks it what to offer in each category and which model to call for a person's choice; nobody keeps a model list in code or picks a replacement for a retired model. The person's key stays in the product. `new-app` → blocks.md → *AI models: tokens* |
 | **Payments** (billing) | The product sells a plan | `/Volumes/Projects/billing` (its README: the contract); the product's side: `/Volumes/Projects/tags/shared/server/billing.ts`. One Stripe account, one webhook and one customer per person for every product; the product holds a billing token and no Stripe key. `new-app` → blocks.md → *Payments: billing* |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
@@ -140,7 +142,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Stateful app on a volume, tailnet only | An internal tool | `/Volumes/Projects/ghostmind/admin` (SQLite on a volume, Tailscale Serve) |
 | Compose on a standalone host | An app that can't go on the cluster | `deploy` → compose-host.md. No product uses it today: tags and users did before moving to the cluster (their git history) |
 | Compose on a small device, deployed over SSH | A single-purpose box that must stay light (a Raspberry Pi with a radio): the host has only git and Docker, no agent, no CI runner | `/Volumes/Projects/bridge` (`scripts/deploy.sh`: edited on the Mac, `run routine deploy` pushes, then the host pulls and restarts only the service whose files changed. It first brings back what the app rewrote on the host, here Zigbee2MQTT's `configuration.yaml`, so the two sides never diverge) |
-| iOS app | Mobile | `/Volumes/Projects/relay/native` (no server of its own, signs in through the product's OAuth); `/Volumes/Projects/noice/native` (the same, plus Google Cast, an html block in the app, its own Metro port, and `scripts/apple.mjs` that registers the bundle ids); `/Volumes/Projects/tags/native` (with a companion server; signing and creds scripts); older: `potion/native`. `new-app` → non-web.md → *A mobile app* |
+| iOS app | Mobile | `/Volumes/Projects/relay/native` (no server of its own, signs in through the product's OAuth); `/Volumes/Projects/noice/native` (the same, plus Google Cast, an html block in the app, its own Metro port, and `scripts/apple.mjs` that registers the bundle ids); `/Volumes/Projects/tags/native` (with a companion server; signing and creds scripts); `/Volumes/Projects/format/native` for a **widget** (a WidgetKit extension in `app/targets/widget`, built by `@bacons/apple-targets` at each prebuild: Home and Lock Screen widgets and the iOS 18 control, opening the app at a deep link); older: `potion/native`. `new-app` → non-web.md → *A mobile app* |
 | Raycast extension | Mac launcher tools | `/Volumes/Projects/labo/projects` |
 | Swift macOS app | Native Mac | `/Volumes/Projects/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Mac app around a program we already have | Native Mac | `/Volumes/Projects/relay/mac` (contains the product's command-line program; trial and package builds; released to `downloads.ghostmind.dev`). `new-app` → non-web.md → *A Mac app* |
@@ -195,7 +197,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 |---|---|
 | portal | ui 5096 |
 | tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 |
-| format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
+| format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 · iOS: Metro 8086, pretend backend 5077 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
 | noice | ui 5065 · db 5066 · engine 5068 · Hasura console 9735 / api 9733 · iOS: Metro 8083, pretend backend 5069 |
@@ -207,6 +209,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | block | demo 5105 · ui 5106 (the one dev host: it sends /mcp, /oauth and /api to the mcp) · db 5107 · mcp 3105 · Hasura console 9775 / api 9773 |
 | colors | ui 5125 (dev only) |
 | billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
+| tokens (playground) | api 3125 · mcp 3126 (prod forward 3127) · db 5125 · Hasura console 9785 / api 9783 |
 | vault | 8200 |
 
 For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
