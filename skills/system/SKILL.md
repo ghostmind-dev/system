@@ -19,7 +19,7 @@ The system is **a few plain tools plus reference apps**. There is no framework t
 
 **Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception: no product holds a compose file any more (the Compose hosts are Vault's own server and the house's Zigbee bridge on a Raspberry Pi, both outside the cluster). Start from Kubernetes, and reach for Compose only when the target can't be the cluster.
 
-Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user may type `/system:debrief`: what it taught goes back into these skills.
+Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user asks for a debrief (`/system:debrief`, or in their own words: "update the system with what you learned"): what it taught goes back into these skills and into the `toolkits` skills.
 
 ## Rules every project follows
 
@@ -133,14 +133,14 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | **Payments** (billing) | The product sells a plan | `/Volumes/Projects/billing` (its README: the contract); the product's side: `/Volumes/Projects/tags/shared/server/billing.ts`. One Stripe account, one webhook and one customer per person for every product; the product holds a billing token and no Stripe key. `new-app` → blocks.md → *Payments: billing* |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
-| **Reaching things in a person's home** (relay) | The product plays on, switches or reads something that sits on a home network: a speaker, a light, a sensor | `/Volumes/Projects/relay` (its README: the API and the protocol); the app's side: `/Volumes/Projects/noice/ui/app/src/speakers.js`. `new-app` → blocks.md → *Things at home: relay* |
+| **Reaching things in a person's home** (relay) | The product makes something for a place (a sound, a picture) that should reach a speaker, a light or a screen there from anywhere | `/Volumes/Projects/relay` (its README, "Playing a stream"): relay reaches the home and is given what the product makes (an address); the product does not call relay. Reference: noice, whose stream relay plays. `new-app` → blocks.md → *Things at home: relay* |
 | Worker / internal service | Background jobs, no public endpoint | `/Volumes/Projects/potion/worker` (a Deployment and Service with no tunnel route) |
 | Compose + Cloud Run (not on the cluster) | A managed target, a script project | `/Volumes/Projects/inference` (bash + gcloud, varlock on the host) |
 | Shared service, always on in dev | A service other products call | `/Volumes/Projects/users` (`start` routine, its own dev database) |
 | Stateful app on a volume, tailnet only | An internal tool | `/Volumes/Projects/ghostmind/admin` (SQLite on a volume, Tailscale Serve) |
 | Compose on a standalone host | An app that can't go on the cluster | `deploy` → compose-host.md. No product uses it today: tags and users did before moving to the cluster (their git history) |
 | Compose on a small device, deployed over SSH | A single-purpose box that must stay light (a Raspberry Pi with a radio): the host has only git and Docker, no agent, no CI runner | `/Volumes/Projects/bridge` (`scripts/deploy.sh`: edited on the Mac, `run routine deploy` pushes, then the host pulls and restarts only the service whose files changed. It first brings back what the app rewrote on the host, here Zigbee2MQTT's `configuration.yaml`, so the two sides never diverge) |
-| iOS app | Mobile | `/Volumes/Projects/relay/native` (no server of its own, signs in through the product's OAuth); `/Volumes/Projects/tags/native` (with a companion server; signing and creds scripts); older: `potion/native`. `new-app` → non-web.md → *A mobile app* |
+| iOS app | Mobile | `/Volumes/Projects/relay/native` (no server of its own, signs in through the product's OAuth); `/Volumes/Projects/noice/native` (the same, plus Google Cast, an html block in the app, its own Metro port, and `scripts/apple.mjs` that registers the bundle ids); `/Volumes/Projects/tags/native` (with a companion server; signing and creds scripts); older: `potion/native`. `new-app` → non-web.md → *A mobile app* |
 | Raycast extension | Mac launcher tools | `/Volumes/Projects/labo/projects` |
 | Swift macOS app | Native Mac | `/Volumes/Projects/format/mac` (`scripts/dev.sh`: watch, rebuild, re-sign, relaunch) |
 | Mac app around a program we already have | Native Mac | `/Volumes/Projects/relay/mac` (contains the product's command-line program; trial and package builds; released to `downloads.ghostmind.dev`). `new-app` → non-web.md → *A Mac app* |
@@ -187,6 +187,8 @@ Projects on separate subdomains (`mcp.tags.city`, `format-mcp.ghostmind.app`, po
 
 Every port a project uses **on the Mac** must be unique across all projects, so any two can run side by side: Skaffold's `localPort` forwards, tool ports such as the Hasura console, and a Compose `ports:` where one exists. Inside the cluster a port only has to be unique within its project, but keep one number per app everywhere (container, Service, forward) so addresses read the same in dev and prod.
 
+**An iOS app's Metro is one of these ports.** Two apps in dev on the same 8081 load each other's code (noice's app ran relay's on 2026-10-13). Each takes its own, written in the registry (`new-app` → non-web.md → *A mobile app*).
+
 **Pick from the registry below**, and add the new project's row in the same change. Then confirm nothing is listening: `lsof -iTCP -sTCP:LISTEN -nP | grep :<port>`.
 
 | Project | Ports |
@@ -196,8 +198,8 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
 | potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
-| noice | ui 5065 · db 5066 · Hasura console 9735 / api 9733 |
-| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 |
+| noice | ui 5065 · db 5066 · engine 5068 · Hasura console 9735 / api 9733 · iOS: Metro 8083, pretend backend 5069 |
+| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 · iOS: Metro 8081 |
 | db | postgres 5432 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |

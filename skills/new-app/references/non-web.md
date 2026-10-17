@@ -54,12 +54,32 @@ credential. If a step seems to need one of those, something above was skipped.
   server has no secret of its own: do not invent one.
 - **Dev and prod are two apps side by side on the phone**: `com.ghostmind.<project>.dev` named `<Name>-Dev`, and
   `com.ghostmind.<project>` named `<Name>`, each with its own API address, chosen by `APP_ENV` in the one schema.
+  **The dev app looks different on the home screen:** its own icon, the prod mark on amber
+  (`app/assets/images/icon-dev.png`, set as `ios.icon` when `ENV` is not prod; it replaces a light/dark pair), and
+  its name under the icon ends in ` dev` (`infoPlist.CFBundleDisplayName`: `'<Name> dev'`, `'<Name>'` in prod).
+  `EXPO_NAME` stays `<Name>-Dev`: it names the Xcode project the scripts build. Without this the two icons are the
+  same and only the hyphen in a truncated name tells them apart. Reference: `relay/native/app/app.config.ts`.
 - **Register both identifiers on Apple Developer** with the App Store Connect key (`POST /v1/bundleIds`), asking
-  the user first: it is their account. **The App Store Connect app record cannot be made through the API**: the
-  user makes it once by hand before the first publish. Say so; do not pretend it is done.
+  the user first: it is their account. Do it **before the first run on a phone**: an identifier Apple does not
+  know fails the device build with "No profiles for '<id>' were found … Automatic signing is disabled". Then make
+  the dev app's signing profile once, with the same key and no Xcode sign-in (routine `mobile_signing`:
+  `xcodebuild … -allowProvisioningUpdates -authenticationKeyPath …`). Reference for both:
+  `noice/native/scripts/apple.mjs` (`identifiers`, and `app` to look for the record) and `noice/native/scripts/ios.sh signing`.
+  **The App Store Connect app record cannot be made through the API**: the user makes it once by hand before the
+  first publish, and chooses its store name. Say so; do not pretend it is done.
 - **Routines, the same names in every project:** `module_local_prebuild`, `mobile_local` (simulator),
-  `mobile_local_device` (the plugged-in phone), `mobile_publish`, `mobile_submit`, `mobile_archive` and `test`. Every one runs
-  through `varlock run --`. The herdr pane that runs the device build is in the `mobile` profile.
+  `mobile_local_device` (the plugged-in phone), `mobile_signing`, `mobile_publish`, `mobile_submit`, `mobile_archive`
+  and `test`. Every one runs through `varlock run --`. The herdr pane that runs the device build is in the `mobile` profile.
+- **A switch that changes what varlock reads goes in the routine, not in a second varlock.** The signing key is
+  read only when asked for: `"mobile_signing": "ASC_KEY=1 varlock run -- bash scripts/ios.sh signing"`, with
+  `if($ASC_KEY, vaultSecret(…))` in the schema. A script that starts `varlock run` again from inside one failed with
+  `Referenced item "VAULT_TOKEN" is not valid` (noice, 2026-10-13).
+- **Each app has its own Metro port, in the port registry** (`system` → Ports). Two apps in dev on 8081 load each
+  other's code: noice's app showed relay's screens, from relay's Metro on the same Mac. React Native's core is
+  prebuilt with 8081 compiled in, so `--port` and `RCT_METRO_PORT` no longer reach the app: a config plugin sets
+  the Debug app's address (`RCTBundleURLProvider.sharedSettings().jsLocation`, the Mac's address from `ip.txt`
+  and the project's port), and `scripts/ios.sh` starts Metro there. Reference: `noice/native/app/plugins/with-metro-port.js`.
+  relay's app still uses 8081 and is the only one allowed to.
 - **The values varlock resolves must reach every step of the native build, and nothing falls back in silence.**
   A native build reads the app's config more than once, and a step started by the IDE's build system does not
   inherit the shell's environment. Have the script write the resolved, non-secret values where that step reads

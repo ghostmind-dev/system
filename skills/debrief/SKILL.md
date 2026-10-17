@@ -1,14 +1,13 @@
 ---
 name: debrief
-description: After a piece of work on a Ghostmind project, find what it taught and write the lessons that would recur into the system's skills and its audit script.
-disable-model-invocation: true
+description: After a piece of work on a Ghostmind project (an app built, a feature shipped, a deploy, a migration, a hard bug), or when the user sets a new direction ("from now on every iOS app…"), write what it taught or decided into the system's skills, its audit script and the toolkits skills, apply it to every project it concerns, then bump and ship the plugins. Use when the user runs /system:debrief, or says "update the system", "update the skills with what you learned", "what did we learn", "write the lessons down", "debrief", or asks at the end of a piece of work for the system or the toolkits to be improved.
 ---
 
 # Debrief
 
-A piece of work just ended: an app was built, something was deployed, a project was migrated or fixed. Find the **lessons** in it and put each one where the next project will meet it. A lesson is a moment where the system could have saved time or a mistake and did not: a rule that was missing, stale or wrong, a reference that was behind, a step in the wrong order, a check that would have caught it.
+A piece of work just ended: an app was built, something was deployed, a project was migrated or fixed. Or the user decided something that holds from now on: a **direction** (every dev iOS app gets its own icon; every product has a settings page). Find the **lessons** and the directions, and put each one where the next project will meet it. A lesson is a moment where the system could have saved time or a mistake and did not: a rule that was missing, stale or wrong, a reference that was behind, a step in the wrong order, a check that would have caught it.
 
-The system's source is `/Volumes/Projects/system` (`skills/`, `skills/comply/scripts/check.sh`). Work there, never on the installed copy of the plugin, which may be days old.
+The system's source is `/Volumes/Projects/system` (`skills/`, `skills/comply/scripts/check.sh`). The toolkits' source is `/Volumes/Projects/toolkits` (`skills/`): what a framework or a tool does (Expo, Xcode, a device, a browser), as opposed to how we build. Work in those repos, never on the installed copies of the plugins, which may be days old. They may be open in another session: check `git status` before editing, and touch only the files of the lesson.
 
 ## Steps
 
@@ -24,6 +23,8 @@ The system's source is `/Volumes/Projects/system` (`skills/`, `skills/comply/scr
 
    *Done when each lesson has the file and the sentence it changes, and how it was proven.*
 
+   A **direction** the user gave needs no proof that it is true: it is a decision. It needs the place it is written (step 4) and the projects it reaches (step 6).
+
 4. **Put each lesson in its one place.** The first row that fits:
 
    | The lesson is | It goes in |
@@ -35,12 +36,17 @@ The system's source is `/Volumes/Projects/system` (`skills/`, `skills/comply/scr
    | a project that now does a block better | the reference table in `system`: move the reference to it |
    | a reference that is behind the rules | the "don't copy" sentence under that table. List the project for the user; its own files are not changed from here |
    | about a secret or a Vault path | `skills/secrets/SKILL.md` |
+   | how a framework or a tool behaves, and its trap (Expo, Xcode, React Native, a native SDK, a device, a browser) | the `toolkits` skill for it (`/Volumes/Projects/toolkits/skills/<name>/SKILL.md`, e.g. `ios-app`, `ios-device`, `mac-app`), its *Traps* table: what you see, why, and what to do |
 
    Change the sentence that was wrong before adding a new one, and delete what the lesson makes stale: the skills are read whole, every time. Say the positive (what to do, and the command), then the trap with what it looked like (the error text, the symptom), so it is recognised next time. Name the project where it happened only as a reference to copy or one not to copy.
 
 5. **Prove the edits.** After a change to `check.sh`: `bash -n` on it, then run it on the project that taught the lesson (it must still say what is true of it) and on one other project (a new check that fires everywhere is wrong, or is a real finding to report). After a change to steps: read the skill from the top as someone starting a new app, and confirm the new line is met before the moment it is needed. *Done when both have been run or read, not assumed.*
 
-6. **Report.** One table: what happened, the lesson, where it went (file and section). Then what was dropped and why, the projects found behind the rules, and anything that needs the user (shared infrastructure, a decision between two patterns). Leave the commit and the version in `.claude-plugin/plugin.json` to the user, and say that installed copies see nothing until the version is raised and released.
+6. **Apply it to every project it reaches.** A rule is for the projects that exist too, not only the next one. Find them with `run projects --json` (and `check.sh` on each, when the lesson became a check), then make the change in each project's repo, the same way in all of them. A change that needs that project's running session or its own decision goes to it through the agent channel (`toolkits:agent-channel-write`). *Done when `check.sh` is quiet on every project it concerns, or each one left is named with why.*
+
+7. **Ship the plugins. This is part of the debrief, not a follow-up.** Installed copies see nothing until a new version is released, and a debrief left uncommitted is lost to every other session. For each plugin changed (`system`, `toolkits`): raise `version` in `.claude-plugin/plugin.json` (minor for a new rule, check or skill; patch for wording), commit on `dev`, push, open the PR into `main` and merge it (`toolkits:bump` does all of this; `toolkits:ship` when the version is already raised). Check `gh pr list` first: an earlier debrief left open is merged first, and this one is built on top of it. Then `toolkits:refresh-plugins`, so open sessions get it.
+
+8. **Report.** One table: what happened, the lesson or direction, where it went (file and section), the projects changed. Then what was dropped and why, the projects still behind, anything that needs the user (shared infrastructure, a decision between two patterns), and the versions released with their PRs.
 
 ## What makes a debrief worth it
 
