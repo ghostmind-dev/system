@@ -125,7 +125,12 @@ for S in "${SERVICES[@]}"; do
   K="$S/k8s"; N=$(basename "$S")
   if [ -d "$K" ]; then
     PRODM=$(ls "$K"/*.yaml 2>/dev/null | grep -v '\.dev\.yaml$' | head -1)
-    [ -n "$PRODM" ] || say FAIL k8s "$K" "no prod manifest (k8s/<app>.yaml)"
+    DEVONLY=""; [ -f "$S/meta.json" ] && grep -Eq '"dev-only"' "$S/meta.json" && DEVONLY=1
+    if [ -n "$DEVONLY" ]; then
+      [ -n "$PRODM" ] && say WARN k8s "$PRODM" "the app is tagged dev-only but has a prod manifest: drop the tag or the manifest"
+    else
+      [ -n "$PRODM" ] || say FAIL k8s "$K" "no prod manifest (k8s/<app>.yaml); an app the user wants dev only carries the tag \"dev-only\" in its meta.json (system rule 9)"
+    fi
     [ -n "$PRODM" ] && ! has 'image:\s*IMAGE\s*$' "$PRODM" && say FAIL k8s "$PRODM" "prod manifest must use 'image: IMAGE' (CI replaces it with the built digest)"
     if [ -n "$PRODM" ] && [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA"; then
       has 'VAULT_JWT_ROLE' "$PRODM" || say FAIL k8s "$PRODM" "the app reads Vault but the Deployment sets no VAULT_JWT_ROLE (login by service account)"
