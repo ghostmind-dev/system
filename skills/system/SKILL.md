@@ -48,6 +48,8 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 12. **A project's folder is shared with other sessions.** Another Claude session, and the `skaffold dev` panes, may be working in the same folder right now. Before changing a repo that is not this session's own project: list the sessions (`ListAgents`) and tell the one that owns it which files you will change (`SendMessage`). Then work in a copy of your own, `git worktree add ../<project>-<topic> -b <topic> origin/main`, and bring the change back as a pull request.
     - **Commit by naming the files**: `git commit -m … -- <paths>`. Never `git commit -a` or `git add -A` there: an uncommitted file in that tree is somebody's work in progress, and `-a` shipped another session's version bump to prod inside an unrelated commit (potion, 2026-10-13).
     - **No `git stash`, `git checkout <branch>` or `git switch` in the shared folder**: a running `skaffold dev` builds from it (`new-app` → kubernetes.md, Dev machines, says what breaks).
+    - **A build that ships is made from the committed branch, in a worktree of its own.** A TestFlight build, an extension zip or a Mac release is built from the working tree, so another session's uncommitted files ship inside it. Build it from a worktree of the branch (`git worktree add .claude/worktrees/ios-publish HEAD`, then `npm install` in it and the routine there), commit the version bump the script writes to the shared branch by naming the file, and remove the worktree.
+    - **Run a routine as its `meta.json` writes it**, with answers piped in when it asks (`printf 'p\n' | run routine mobile_publish`); never retype its command around it. tags' `publish.sh` starts varlock itself, and wrapped in a second `APP_ENV=prod varlock run --` it stopped before building with `vaultSecret(): No Vault authentication found` on every secret.
     - **Stop only your own processes, by their id.** `pkill -f scripts/publish.sh` matches every project's publish on the machine: it killed a second session's iOS build mid-archive (relay, 2026-10-13). One publish of an app at a time: say you are starting one.
     - To try a branch on dev, fast-forward the shared folder's own branch to it (`git merge --ff-only origin/<topic>`) when its tree is clean; that is the project's normal flow and switches nothing.
 
@@ -78,13 +80,14 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 
 ## The core of every product
 
-Every product starts from the same six parts. A new product gets all of them unless the user says otherwise; what varies from one product to the next is what the app does, not how it is assembled.
+Every product starts from the same seven parts. A new product gets all of them unless the user says otherwise; what varies from one product to the next is what the app does, not how it is assembled.
 
 | Part | What it is | Reference |
 |---|---|---|
 | **Google sign-in** | One login for web, MCP and native, backed by the shared users database (`DB_USERS_ENDPOINT`), so a person is the same user in every product | `/Volumes/Projects/format/mcp` (`app/src/auth/oauth.ts`) |
 | **UI** | The web app, signing in through the MCP server's OAuth | `/Volumes/Projects/format/ui` |
 | **Database** | The product's own state: Hasura on the cluster | `/Volumes/Projects/tags/db` |
+| **Colours** | Every interface (web, iOS, Chrome extension) carries `@ghostmind-dev/colors` from its first commit, **installed and wired with the switch off**: the app keeps its own look, and its colours already go through the package's names, so offering every theme later is a setting, not a rewrite. An app may stay off for good (decided 2026-10-16). `new-app` → blocks.md → *Colours* | `/Volumes/Projects/block/ui` (web, Vite), `/Volumes/Projects/potion/native` (iOS), `/Volumes/Projects/colors` |
 | **MCP** | The app's actions as tools, stateless on the cluster | `/Volumes/Projects/potion/mcp` (transport) |
 | **Skills** | The Claude plugin that teaches the app's concepts and points at the MCP | `/Volumes/Projects/potion/plugin` |
 | **OpenRouter, the user's own** | Every AI feature runs on the key the user connects. We don't pay for inference, and a user who wants a heavier experience pays for their own. **Which models are offered is not the product's to decide**: the model lists, the defaults and what replaces a model OpenRouter retires come from the **tokens** service (`new-app` → blocks.md → *AI models: tokens*) | `/Volumes/Projects/format` (`ai_connections`); `/Volumes/Projects/tokens` |

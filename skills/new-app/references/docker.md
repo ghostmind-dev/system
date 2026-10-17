@@ -30,6 +30,8 @@ WORKDIR /usr/app/app
 COPY app .
 ARG APP_ENV=dev
 RUN if [ "$APP_ENV" = "prod" ]; then npm run build; fi
+# The build runs without varlock: a page Next prerenders here sees none of the schema's values, so a value
+# such a page reads must default to its production value (`!== 'off'` rather than `=== 'on'`).
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
