@@ -59,8 +59,10 @@ credential. If a step seems to need one of those, something above was skipped.
   its name under the icon ends in ` dev` (`infoPlist.CFBundleDisplayName`: `'<Name> dev'`, `'<Name>'` in prod).
   `EXPO_NAME` stays `<Name>-Dev`: it names the Xcode project the scripts build. Without this the two icons are the
   same and only the hyphen in a truncated name tells them apart. Reference: `relay/native/app/app.config.ts`.
-- **Register both identifiers on Apple Developer** with the App Store Connect key (`POST /v1/bundleIds`), asking
-  the user first: it is their account. Do it **before the first run on a phone**: an identifier Apple does not
+- **Register every identifier on Apple Developer** with the App Store Connect key (`POST /v1/bundleIds`), asking
+  the user first: it is their account. That is the app's two (dev and prod) and, for each, one per extension
+  inside it (a widget is `<app id>.widget`): list them all in `apple.mjs`, and register an extension's before
+  the build that first contains it. Do it **before the first run on a phone**: an identifier Apple does not
   know fails the device build with "No profiles for '<id>' were found … Automatic signing is disabled". Then make
   the dev app's signing profile once, with the same key and no Xcode sign-in (routine `mobile_signing`:
   `xcodebuild … -allowProvisioningUpdates -authenticationKeyPath …`). Reference for both:
@@ -100,11 +102,19 @@ credential. If a step seems to need one of those, something above was skipped.
   its first lines. References: `relay/native/scripts/publish.sh` (also in `potion` and `tags`).
 - **Publish from a copy of `main`, one build at a time.** The publish writes `ios/` again for the prod app and
   takes ten minutes of the machine, so run it in a worktree of `origin/main` (`git worktree add`, then
-  `run routine mobile_publish` in its `native/`), not in the folder the dev build lives in. The version
+  `run routine mobile_publish` in its `native/`), not in the folder the dev build lives in. The first publish
+  comes before `native/` is on `main`: then copy the folder into the session's scratchpad
+  (`rsync -a --exclude node_modules --exclude ios --exclude build`, then `npm install` in its `app/`) and publish
+  there; the dev build's `ios/` is left alone (format, 2026-10-16). The version
   question is answered on standard input when no person is there: `printf 'p\n' | run routine mobile_publish`.
   Say you are starting it: two sessions each told to publish the same app stopped each other's build
   (relay, 2026-10-13). After "Uploaded", the new version in `app.json` goes to `main` as a change of its own,
   that one file; left uncommitted it is carried into somebody's next commit.
+- **"Upload succeeded" is not "Apple took it".** Apple checks the build after the upload and refuses it in
+  silence: `apple.mjs builds` keeps saying "no build yet" and TestFlight sends no invitation. The reason only
+  comes by email to the account holder, "Action needed: The uploaded build for <app> has one or more issues"
+  (format's first build: ITMS-90683, a purpose string a library needs although the app never uses it). When no
+  build shows 15 minutes after the upload, read that email (the person's Gmail, read-only), fix, publish again.
 - **A build nobody ran is not a tested build.** Uploading is not proof: say in the report that TestFlight is
   the first run, and what to press there.
 - **Before the App Store:** an app that signs in with Google only must also offer Sign in with Apple. With the
