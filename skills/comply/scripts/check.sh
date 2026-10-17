@@ -124,12 +124,6 @@ for S in "${SERVICES[@]}"; do
         say WARN dockerfile "$DF" "entrypoint is not varlock: the container won't resolve its own secrets"
     fi
   fi
-  # colours: every interface carries @ghostmind-dev/colors, switched off until the app offers themes (system: The core)
-  PKG="$S/app/package.json"
-  # (not in the repo that makes the package: its own pages read it from source)
-  if [ -f "$PKG" ] && ! grep -q '"name": "@ghostmind-dev/colors"' "$ROOT/lib/app/package.json" 2>/dev/null && grep -Eq '"(react-native|expo|next|vite|react-dom)"' "$PKG" && ! grep -q '"@ghostmind-dev/colors"' "$PKG"; then
-    say WARN colours "$PKG" "no @ghostmind-dev/colors: every interface carries it, switched off (new-app blocks.md, Colours)"
-  fi
   # kubernetes (the default target)
   K="$S/k8s"; N=$(basename "$S")
   if [ -d "$K" ]; then

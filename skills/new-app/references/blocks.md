@@ -195,10 +195,15 @@ relay still has a way for an app of ours to act for a person (`TRUSTED_APPS`, `r
 
 Reference: `/Volumes/Projects/potion/worker` (`k8s/worker.yaml`). A Deployment and a Service like any app, with no route in the tunnel: sibling apps reach it at `http://<project>-worker:<port>`. Set its memory limit from what it really uses, and keep the prod manifest's hardening (read-only root filesystem, no capabilities) when it processes untrusted input.
 
-## Colours: `@ghostmind-dev/colors`, switched off from the start
+## Colours: the app's own theme, reproduced from Potion
 
-Every interface carries the theme package from its first commit, **off**: the app looks the way it was designed, nothing is offered to choose, and nothing reads storage. Because the app's colours already go through the package, turning themes on later is `COLORS_PACKAGE=on`, not a rewrite. An app may stay off for good. The package, its user skill (`plugin/skills/colors/SKILL.md`) and the skill for moving an existing app (`.claude/skills/colors-adopt`) live in `/Volumes/Projects/colors`.
+Each app owns its colours. Nothing is shared at run time: no theme package, no shared tokens. (`@ghostmind-dev/colors` tried that across six apps and was removed on 2026-10-17. Keeping one package, its Swift copy and a bridge in every app in step cost more than reproducing a system per app.) Build the theme system **before the first screen**, by reading Potion's and reproducing it, adapted to the app:
 
-- **Web**: the app's own look is its `own` theme (a built-in id, or `{ extends: 'light', palette: { … } }`); `createColors({ themes: false, own, system })` writes the stylesheet and the before-paint script into the page `<head>` (a Vite plugin, a Next layout, or the Node server for plain pages); components name roles (`var(--c-<role>)`, the Tailwind `semantic` names) or the app's own variables mapped to roles in one CSS file. `COLORS_PACKAGE=on|off` in the schema, default off, plus a dev-only pill to flip it. Reference: `/Volumes/Projects/block/ui` (`app/vite.config.ts`, `app/src/colors-map.css`, `app/src/colors.tsx`).
-- **iOS (React Native)**: one facade the screens read colours from (`platformColors(theme, 'ios')`, every value through `nativeColour()`), the app's own values when off. Reanimated rejects `rgb(r g b / a)` with "Invalid color value": give it hex or `rgba(r, g, b, a)` only. Reference: `/Volumes/Projects/potion/native/app/theme/source.ts`.
-- **Read the switch so that pages built in advance agree with it**: `process.env.COLORS_PACKAGE !== 'off'` when the app is on, `=== 'on'` when it is off. A prerendered page is built in the image without varlock (docker.md), so it sees no variable at all: Potion's production kept its old colours behind a schema that said `on` while its pages read `=== 'on'`.
+- **One token file** holds every colour: the themes, a light and a dark side at least.
+- **Components name roles**, never colours: CSS variables (`var(--c-<role>)`) or Tailwind classes mapped to them on the web, one theme object the screens read on iOS. A new look is then an edit of the token file, not of components.
+- **A before-paint script** in the page `<head>` sets the theme from the saved choice or `prefers-color-scheme`, so nothing flashes.
+- **Contrast checked** in a test: each text role against the background it sits on.
+
+References:
+- Web: `/Volumes/Projects/potion/ui/app/src/theme`.
+- iOS: `/Volumes/Projects/potion/native/app/theme`. Reanimated rejects `rgb(r g b / a)` with "Invalid color value"; give it hex or `rgba(r, g, b, a)` only.
