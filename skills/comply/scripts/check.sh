@@ -60,6 +60,9 @@ for S in "${SERVICES[@]}"; do
     has 'enum\([^)]*\blocal\b' "$SCHEMA" && say FAIL schema "$SCHEMA" "APP_ENV must be dev/prod, never 'local' (varlock always loads .env.local)"
     has 'remap\(' "$SCHEMA" && say WARN schema "$SCHEMA" "remap() returns the env name, not the value: use if(forEnv(prod), …)"
     has 'ghostmind/projects/' "$SCHEMA" && say FAIL schema "$SCHEMA" "Vault path is ghostmind/project/ (singular)"
+    # varlock reads every "# @word" as a decorator, comments included, and refuses the whole file for one it does not know
+    BADAT=$(grep -nE '^[[:space:]]*#[[:space:]]*@[A-Za-z0-9_]*[^A-Za-z0-9_=( ]' "$SCHEMA" | head -1 | cut -d: -f1)
+    [ -n "$BADAT" ] && say FAIL schema "$SCHEMA:$BADAT" "a comment line starts with @ and a name varlock can't read as a decorator: it refuses the whole schema. Write the name inside the sentence (secrets skill)"
     grep -En '\.ts\.net' "$SCHEMA" 2>/dev/null | grep -Ev '^[0-9]+:\s*(#|VAULT_ADDR)' | grep -Eq . && \
       say WARN runtime-net "$SCHEMA" "a value points at a Tailscale name: between Hetzner servers running prod calls use the private network (10.0.0.x); fine if it's dev-only or a deliberate cross-provider link"
   fi
@@ -120,6 +123,12 @@ for S in "${SERVICES[@]}"; do
       [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA" && ! has 'ENTRYPOINT \["varlock"' "$DF" && \
         say WARN dockerfile "$DF" "entrypoint is not varlock: the container won't resolve its own secrets"
     fi
+  fi
+  # colours: every interface carries @ghostmind-dev/colors, switched off until the app offers themes (system: The core)
+  PKG="$S/app/package.json"
+  # (not in the repo that makes the package: its own pages read it from source)
+  if [ -f "$PKG" ] && ! grep -q '"name": "@ghostmind-dev/colors"' "$ROOT/lib/app/package.json" 2>/dev/null && grep -Eq '"(react-native|expo|next|vite|react-dom)"' "$PKG" && ! grep -q '"@ghostmind-dev/colors"' "$PKG"; then
+    say WARN colours "$PKG" "no @ghostmind-dev/colors: every interface carries it, switched off (new-app blocks.md, Colours)"
   fi
   # kubernetes (the default target)
   K="$S/k8s"; N=$(basename "$S")
