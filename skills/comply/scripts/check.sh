@@ -242,7 +242,13 @@ done
 grep -rlE 'resource "local_(sensitive_)?file"' --include='*.tf' --exclude-dir=.terraform --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
 while read -r f; do
   grep -qE 'private_key|key_json|credentials' "$f" && \
-    say FAIL secrets "$f" "Terraform writes a key to a file: a secret on disk. Send it from the outputs into Vault instead (system: Terraform row; reference /Volumes/Projects/format/bucket/scripts/terraform.sh)"
+    say FAIL secrets "$f" "Terraform writes a key to a file: a secret on disk. Send it from the outputs into Vault instead (system: OpenTofu row; reference /Volumes/Projects/format/bucket/scripts/tofu.sh)"
+done
+
+# ---------- OpenTofu, not HashiCorp's Terraform ----------
+grep -rlE 'hashicorp/terraform[:@ ]|(^|[ ;|&])terraform (init|plan|apply)' --include='*.sh' --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
+while read -r f; do
+  say WARN tofu "$f" "runs HashiCorp's Terraform: use OpenTofu (ghcr.io/opentofu/opentofu:<version>, same .tf files and state; new-app blocks.md, OpenTofu)"
 done
 
 # ---------- port collisions across projects ----------
