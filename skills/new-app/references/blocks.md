@@ -81,6 +81,21 @@ A product that lets a person make their own html for a part of it (the details o
 When users pay for their own AI: the person connects their own OpenRouter key, the models offered are read live, and a
 model they chose is never swapped for another. The whole block, with code and traps: [openrouter.md](openrouter.md).
 
+## An AI chat in an app: modes, each with its own reach
+
+A product's chat works in **modes**, and a mode is defined by what it can reach (owner, 2026-10-18). One conversation is in one mode, chosen before it starts and kept; another mode is another conversation (one chat window with a mode switch, or a page per mode: the product's choice).
+
+| Mode | It reaches | It never reaches | Examples |
+|---|---|---|---|
+| **Data** (ask) | the person's own data, read and searched; the product's actions on it, every write waiting for the person's approval | | Potion: chat with your notes, make a new note (which may hold an html block). noice: which sounds do I have, play this one. tags: questions and actions on the map |
+| **Make** | the product's own tools and engine, to make a new thing of its kind | the person's existing data | noice: make a new sound with its sound system (bass, effects…), without the sounds already made |
+| **Layout** | the live draft and made-up data only (*Letting a person make layouts*, above) | the person's data and the product's tools | the noice player and its effects, a tags place panel, a Relay dashboard, a Potion layout |
+
+- **A mode's reach is what the model is given, never what it is asked to respect.** Each mode has its own tool list and its own context: a layout conversation is given the draft tools and the sample, nothing else, so it cannot read a note even when asked to; a make conversation is given the engine's tools and none that list or read the person's things. The loop (`runTurn` in `@ghostmind-dev/block`, or the product's own) runs only the tools it is handed, so the separation lives in which list is handed to it.
+- **The system prompt says the mode** and what it does not reach, so the model answers "not in this mode" instead of guessing.
+- **The model, the key and the cost are the same in every mode** (bring-your-own OpenRouter, above): a mode changes the reach, not the account.
+- A product starts with the modes it needs (often Data, then Layout); layout creation may later be one shared place for every product, from the same library and the same model.
+
 ## Payments: billing
 
 A product that sells a plan does not integrate Stripe. It uses **billing** (`/Volumes/Projects/billing`, repo `ghostmind-app/billing`): one Stripe account, one webhook and one Stripe customer per person, for every product. The product gets no Stripe key, no Stripe package, no webhook route and no billing table. Its README has the contract and stays the source of truth; this is the order of work.
