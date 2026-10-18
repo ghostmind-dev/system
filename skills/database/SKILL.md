@@ -12,7 +12,7 @@ Every product's data lives on **one shared Postgres server per environment**, ru
 
 | | Dev | Prod |
 |---|---|---|
-| Cluster | the M1's (kube context `m1`), namespace `db` | ghostmind k3s (context `ghostmind`), namespace `db` |
+| Cluster | the dev cluster (the current contexts), namespace `db` | ghostmind k3s (context `ghostmind`), namespace `db` |
 | Address, from a pod | `db-postgres.db.svc.cluster.local:5432` | the same name |
 
 The address is kept once, in Vault: `ghostmind/global/postgres#DB_HOST`. Each project gets its **own databases and its own role**, never the administrator's login. The API layer is a **Hasura** container per project. References: `/Volumes/Projects/format/db` and `/Volumes/Projects/tags/db` (migrations applied in the container); older: `potion/db`.
@@ -22,7 +22,7 @@ Both servers are shared infrastructure: ask before anything that creates, change
 ## Create a project database
 
 1. **Names:** database `<project>_<app>_<env>` (underscores, e.g. `potion_db_dev`, `potion_db_prod`). The role takes the same name. A migrated project keeps its existing database names (tags: `tags-db-local`, `tags-db-prod`); don't move data to match the convention.
-2. **Create the role and DB in the `db` project**, not from the product: `cd /Volumes/Projects/db/postgres && run routine create_db <database>` (dev, the M1's cluster; `DB_CONTEXT=ghostmind` in front for prod, with a go-ahead). It makes a role of the same name that can only log in to that database, the database it owns, and stores `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` at `ghostmind/project/db/databases/<env>/<database>`. Safe to run again. A product holds no script for this.
+2. **Create the role and DB in the `db` project**, not from the product: `cd /Volumes/Projects/db/postgres && run routine create_db <database>` (dev, on the dev cluster; `DB_CONTEXT=ghostmind` in front for prod, with a go-ahead). It makes a role of the same name that can only log in to that database, the database it owns, and stores `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER` and `DB_PASSWORD` at `ghostmind/project/db/databases/<env>/<database>`. Safe to run again. A product holds no script for this.
 
    *Done when that Vault path exists and `run routine list` shows the database with its owner.*
 3. **Point the apps at it.** The app/Hasura schema builds the URL from the credentials that routine stored:

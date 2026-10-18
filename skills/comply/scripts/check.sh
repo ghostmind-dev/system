@@ -148,10 +148,11 @@ for S in "${SERVICES[@]}"; do
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
         has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; skaffold dev uses the current kube context (paired with the Docker context on the same machine)"
-        # a script that names a cluster is the same pin, one file away (scripts/skaffold.sh with DOCKER_HOST=ssh://m1, kubectl --context m1)
+        # a script that names a cluster is the same pin, one file away (DOCKER_HOST=ssh://<machine>, kubectl --context <machine>):
+        # any context but the prod one, which scripts that touch prod always name
         for SH in "$S"/scripts/*.sh; do
-          [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -Eq 'DOCKER_HOST=ssh://|--(kube-)?context[ =](m1|m3|orbstack)\b' && \
-            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; switch the kube and Docker contexts instead (new-app kubernetes.md, Dev machines)"
+          [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -E 'DOCKER_HOST=ssh://|--(kube-)?context[ =][A-Za-z0-9_$-]' | grep -Evq -- '--(kube-)?context[ =](ghostmind|"?\$)' && \
+            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; use the current kube and Docker contexts as they are (new-app kubernetes.md, Dev machines)"
         done
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
         has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the cluster on the Docker host uses the image directly)"
