@@ -231,7 +231,7 @@ for S in $(printf '%s\n' "${SERVICES[@]}" "$ROOT/shared" "$ROOT/lib" | sort -u);
     --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=dist --exclude-dir=build --exclude-dir=test --exclude-dir=tests 2>/dev/null |
   while read -r f; do
     [ "$(grep -oE "$MODEL_ID" "$f" | grep -viE 'tts|voice|speech|image|embed' | sort -u | wc -l)" -ge 3 ] && \
-      say WARN ai-models "$f" "a hand-kept list of AI models: read them live from OpenRouter's /api/v1/models, default to a ~maker/family-latest alias (new-app blocks.md -> Bring-your-own OpenRouter)"
+      say WARN ai-models "$f" "a hand-kept list of AI models: read them live from OpenRouter's /api/v1/models, default to a ~maker/family-latest alias (new-app references/openrouter.md)"
   done
 done
 
