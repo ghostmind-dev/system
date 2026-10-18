@@ -61,6 +61,11 @@ only Gemini, through Google's own providers, takes a YouTube address).
 
 - **The default is a `~maker/family-latest` alias** (`~anthropic/claude-sonnet-latest`): OpenRouter keeps it on the
   newest of the family, so the default never ages and a person who picks one never has to come back.
+- **A feature that runs on every keystroke or every dictation picks its default by measuring.** Time and price two or
+  three candidates on a real input in dev and keep the fastest that is good enough, even when no alias follows it, with
+  the numbers in a comment beside the default. Measured for dictation cleanup (format, 2026-10-18): Gemini 3.1
+  Flash-Lite 1.05 s / $0.0003, Claude Haiku Latest 1.9 s / $0.0011, Claude Sonnet Latest 1.2 s / $0.0033. A default
+  that is not an alias needs watching: change it when OpenRouter gives it an `expirationDate`.
 - Each alias carries **`aliasTarget`** (`{ name: 'Anthropic: Claude Sonnet 5.5', slug: 'anthropic/claude-sonnet-5.5' }`):
   show it, so the person sees what "Latest" is today.
 - A picker groups by maker, aliases first in each group, then newest (`created`), and **has a search box**: an agent
@@ -105,4 +110,5 @@ only Gemini, through Google's own providers, takes a YouTube address).
 | `400 {"error":{"message":"<id> is not a valid model ID"}}` | OpenRouter retired the model since it was chosen | The "choose another" refusal, never a generic "AI call failed" and never a silent switch |
 | A PDF costs more than expected | Sent to a model that does not read PDFs, it goes through OpenRouter's default parser, which is paid OCR | Add `plugins: [{ id: 'file-parser', pdf: { engine: 'pdf-text' } }]` (free text parser) |
 | `content: null` with a small `max_tokens` | A reasoning model spent the budget thinking | Leave room, or send `reasoning: { effort: 'low' }` |
+| `400` on a call that sends `reasoning: { effort: 'none' }` (or `'minimal'`), for Claude Sonnet Latest or Gemini Flash Latest but not for others | The model must think: its listing has `reasoning.mandatory: true` and `supportedEfforts` without `none` | Send the least effort the model lists (`reasoning.supportedEfforts`), or step down on a 400: `none` → `minimal` → `low`. Check first that the 400 is not "is not a valid model ID" (a gone model) |
 | A model in the picker that stops answering days later | It had an `expirationDate` | Leave out models with one |

@@ -236,6 +236,15 @@ for S in $(printf '%s\n' "${SERVICES[@]}" "$ROOT/shared" "$ROOT/lib" | sort -u);
   done
 done
 
+# ---------- a key written to disk by Terraform ----------
+# A service-account key that Terraform writes to a file (resource "local_file") is a secret on disk, even gitignored.
+# The key goes from Terraform's outputs straight into Vault instead.
+grep -rlE 'resource "local_(sensitive_)?file"' --include='*.tf' --exclude-dir=.terraform --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
+while read -r f; do
+  grep -qE 'private_key|key_json|credentials' "$f" && \
+    say FAIL secrets "$f" "Terraform writes a key to a file: a secret on disk. Send it from the outputs into Vault instead (system: Terraform row; reference /Volumes/Projects/format/bucket/scripts/terraform.sh)"
+done
+
 # ---------- port collisions across projects ----------
 # host side of "HOST:CONTAINER" / "IP:HOST:CONTAINER" port mappings in compose files
 ports_of() { grep -hE '^\s*-\s*"?[^ #]*[0-9]+:[0-9]+"?\s*(#.*)?$|ports:\s*\[' "$@" 2>/dev/null \

@@ -156,6 +156,8 @@ Images are built with `push: false`: an image exists only on the Docker daemon t
 
 **Do not change the cluster under a running `skaffold dev`.** It reads `skaffold.yaml` again on every change and keeps the Docker daemon it started with: removing a `kubeContext` (or switching the kube context) while it runs sends the next deploy to the other cluster with an image that only the first machine has, and the pod fails with `can't be pulled`. Stop it, change, start it again; then delete the namespace it left on the wrong cluster (`bash k8s/remove.sh` on that context).
 
+**A throwaway container from a host script** (Terraform, a CLI image) runs on the current Docker engine too, which may be another machine: `docker run -v "$PWD/infra:/infra"` then mounts that machine's folder, which is empty, and Terraform answers `Error: No configuration files`. Send the files in on stdin and run every step in the same container: `tar -C infra -cf - . | docker run --rm -i --entrypoint sh <image> -c 'mkdir /w && cd /w && tar -xf - && terraform init … && terraform "$@"' tf "$@"`. Reference: `/Volumes/Projects/format/bucket/scripts/terraform.sh`.
+
 **A dev cluster on another machine, over Tailscale** (the kube context's server is the tailnet address). Its Docker daemon cannot be an `ssh://` context: Skaffold reads the context but its built-in Docker client cannot dial `ssh://`, and fails after `Checking cache` with `Cannot connect to the Docker daemon at ssh://<host>`, with or without `useDockerCLI`. Forward the remote socket over SSH to a local socket and point the Docker context at that:
 
 ```
