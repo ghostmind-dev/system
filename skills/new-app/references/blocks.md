@@ -81,6 +81,20 @@ A product that lets a person make their own html for a part of it (the details o
 When users pay for their own AI: the person connects their own OpenRouter key, the models offered are read live, and a
 model they chose is never swapped for another. The whole block, with code and traps: [openrouter.md](openrouter.md).
 
+## An AI chat in an app: contexts with different reach (an observation)
+
+Not a rule: what the owner has seen so far while adding AI chats to the products (2026-10-18), for a product to weigh. A product's chat tends to have several **contexts**, which differ by what they need to reach. Whether they are one chat with a switch, a page each, or one chat that decides, is the product's call, and still open.
+
+| Context | It needs | It does not need | Examples |
+|---|---|---|---|
+| **Data** (ask) | the person's own data, read and searched; the product's actions on it, every write waiting for the person's approval | | Potion: chat with your notes, make a new note (which may hold an html block). noice: which sounds do I have, play this one. tags: questions and actions on the map |
+| **Make** | the product's own tools and engine, to make a new thing of its kind | the person's existing data | noice: make a new sound with its sound system (bass, effects…), without the sounds already made |
+| **Layout** | the live draft and made-up data only (*Letting a person make layouts*, above) | the person's data and the product's tools | the noice player and its effects, a tags place panel, a Relay dashboard, a Potion layout |
+
+- **Where a context is kept apart, it is kept apart by what the model is handed**, not by asking it to respect a limit: the loop (`runTurn` in `@ghostmind-dev/block`, or the product's own) runs only the tools it is given. The one firm case is Layout: a layout knows no real data (*Letting a person make layouts*, above), so its conversation is given the draft tools and the sample, nothing else.
+- The model, the key and the cost are the same whatever the context (bring-your-own OpenRouter, above).
+- Layout creation may later be one shared place for every product, from the same library and the same model.
+
 ## Payments: billing
 
 A product that sells a plan does not integrate Stripe. It uses **billing** (`/Volumes/Projects/billing`, repo `ghostmind-app/billing`): one Stripe account, one webhook and one Stripe customer per person, for every product. The product gets no Stripe key, no Stripe package, no webhook route and no billing table. Its README has the contract and stays the source of truth; this is the order of work.
