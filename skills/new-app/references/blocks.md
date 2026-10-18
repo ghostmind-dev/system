@@ -189,14 +189,14 @@ A cloudflared app per project sends each hostname **straight to its app's Servic
 
 Traefik is no longer part of the pattern, and no project has a `traefik/` app any more.
 
-## Terraform (cloud resources: buckets, service accounts)
+## OpenTofu (cloud resources: buckets, service accounts)
 
-No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashicorp/terraform` container through varlock. Reference: `/Volumes/Projects/tags/bucket` (`.env.schema`, `scripts/terraform.sh`, `infra/`).
+**OpenTofu, not Terraform** (owner's direction, 2026-10-18): the open-source fork (MPL, Linux Foundation) of Terraform, which HashiCorp moved to the BSL. Same `.tf` files, same providers, same state: a project on Terraform switches by changing the image, then `plan` must show no changes (format's bucket, written by Terraform 1.13, did on dev and prod). No `run terraform`, and nothing to install: it runs in a throwaway `ghcr.io/opentofu/opentofu:<version>` container through varlock (pin an exact version). Reference: `/Volumes/Projects/format/bucket` (`.env.schema`, `scripts/tofu.sh`, `infra/main.tf`).
 
-- **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")`, the `TF_VAR_*` inputs, and `TF_STATE_PREFIX` built with `concat()`.
-- **`scripts/terraform.sh <dev|prod> [args]`** re-executes itself through `varlock run` with `APP_ENV` set (routines have no shell to set it), then runs `docker run --rm -v "$PWD/infra:/infra" -w /infra -e GOOGLE_CREDENTIALS -e TF_VAR_… hashicorp/terraform:1.13`: `init -reconfigure -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`).
+- **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")` (the state bucket, shared with what Terraform wrote), the `TF_VAR_*` inputs (OpenTofu reads the same names) and `TF_STATE_PREFIX` built with `concat()`.
+- **`scripts/tofu.sh <dev|prod> [args]`** re-executes itself through `varlock run --include-internal` with `APP_ENV` set (routines have no shell to set it; `--include-internal` hands the child `VAULT_TOKEN`). It sends `infra/` into the container on stdin and runs `tofu init -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`), in that one container: a mounted folder is empty when the Docker engine is another machine (`new-app` → kubernetes.md, *Dev machines*).
+- **A key never goes to disk.** After `apply`, the script pipes the outputs (`tofu output -json`) into `vault kv put <path> -`; the apps' schemas read it from there. `resource "local_file"` with a key is a `check.sh` FAIL.
 - **Existing state from the `run` era** lives at `<meta.id>/<legacy env>/terraform/<component>` in `$TERRAFORM_BUCKET_NAME`, with `local` as the dev env name. Keep that prefix (`concat("<meta.id>/", $TF_VAR_ENVIRONMENT, "/terraform/core")` with `TF_VAR_ENVIRONMENT=if(forEnv(prod), "prod", "local")`) and `plan` must show no changes before anything else.
-- **Flag resources that write keys to disk** (`local_file` with a service-account key). Prefer putting the key in Vault.
 
 ## Database
 
