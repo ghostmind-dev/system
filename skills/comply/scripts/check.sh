@@ -222,6 +222,19 @@ for S in "${SERVICES[@]}"; do
   fi
 done
 
+# ---------- AI models are read live ----------
+# A source file naming three or more OpenRouter chat models is a hand-kept list, and it ages (voice models aside).
+MODEL_ID="['\"](anthropic|openai|google|x-ai|deepseek|qwen|z-ai|moonshotai|mistralai|minimax|meta-llama)/[a-z0-9.-]+['\"]"
+for S in $(printf '%s\n' "${SERVICES[@]}" "$ROOT/shared" "$ROOT/lib" | sort -u); do
+  [ -d "$S" ] || continue
+  grep -rlE "$MODEL_ID" "$S" --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs' --include='*.py' \
+    --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=dist --exclude-dir=build --exclude-dir=test --exclude-dir=tests 2>/dev/null |
+  while read -r f; do
+    [ "$(grep -oE "$MODEL_ID" "$f" | grep -viE 'tts|voice|speech|image|embed' | sort -u | wc -l)" -ge 3 ] && \
+      say WARN ai-models "$f" "a hand-kept list of AI models: read them live from OpenRouter's /api/v1/models, default to a ~maker/family-latest alias (new-app blocks.md -> Bring-your-own OpenRouter)"
+  done
+done
+
 # ---------- port collisions across projects ----------
 # host side of "HOST:CONTAINER" / "IP:HOST:CONTAINER" port mappings in compose files
 ports_of() { grep -hE '^\s*-\s*"?[^ #]*[0-9]+:[0-9]+"?\s*(#.*)?$|ports:\s*\[' "$@" 2>/dev/null \

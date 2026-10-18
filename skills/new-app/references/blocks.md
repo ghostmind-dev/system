@@ -72,7 +72,30 @@ When users pay for their own AI: the user connects their key through OpenRouter'
 **A model the person chose stops working** (OpenRouter retired it: it is gone from `/api/v1/models`, past its
 `expiration_date`, or a call answers that the model does not exist): the product **stops and tells them** ("The model
 X is no longer available. Choose another."), keeps what they typed or said, and lets them pick another. It never swaps
-their choice for another model on its own. Each product keeps its own list of models to offer.
+their choice for another model on its own: the refusal names the model and the screen where another is chosen,
+and the screen that offers models marks the gone one.
+
+**The models offered are read live from OpenRouter, never kept as a list in code** (owner's direction, 2026-10-18). A
+hand-kept list went a month without an edit in Potion while three new models came out. Read `GET
+https://openrouter.ai/api/v1/models` (no key needed) on the server, cache it about an hour, and filter by what the
+feature needs:
+
+| The feature needs | Filter on |
+|---|---|
+| an agent with tools (MCP, skills) | `supported_parameters` has `tools` **and** `tool_choice`; `context_length` ≥ 64K |
+| a picture or a PDF attached | `architecture.input_modalities` has `image` / `file` (offer the attach button only then) |
+| a YouTube address watched | `^~?google/gemini-` with `video` in `input_modalities`: only Gemini through Google's providers (`provider.only: ['google-ai-studio','google-vertex']`) takes one; Gemma and the rest want a file |
+| text out | `architecture.output_modalities` has `text` and no `image`/`audio` |
+
+Always leave out ids with `:` (`:free`, `:batch`), `openrouter/` routers, and a model with an `expiration_date` (it is
+retiring). Make the default a `~maker/family-latest` alias (`~anthropic/claude-sonnet-latest`, `~google/gemini-flash-latest`):
+OpenRouter keeps it on the newest of the family, so the default never ages. Check a write against the list; tell "gone"
+by the id missing from the whole listing. Reference: `potion/shared/server/ai-models.ts`.
+
+Traps, as they look:
+- A retired id is answered `400 {"error":{"message":"<id> is not a valid model ID"}}`: map it to the "choose another" refusal, not a generic failure.
+- A PDF sent as a `file` part to a model that does not read PDFs goes through OpenRouter's default parser, which is paid OCR. Send `plugins: [{ id: 'file-parser', pdf: { engine: 'pdf-text' } }]` for the free text parser.
+- A reasoning model given a small `max_tokens` can spend it all thinking and answer `content: null`. Leave room, or ask for `reasoning: { effort: 'low' }`.
 
 ## Payments: billing
 
