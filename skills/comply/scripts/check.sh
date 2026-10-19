@@ -251,6 +251,38 @@ while read -r f; do
   say WARN tofu "$f" "runs HashiCorp's Terraform: use OpenTofu (ghcr.io/opentofu/opentofu:<version>, same .tf files and state; new-app blocks.md, OpenTofu)"
 done
 
+# ---------- herdr: the mobile tab ----------
+for S in "${SERVICES[@]}"; do
+  M="$S/meta.json"; [ -f "$M" ] || continue
+  jq -e '[.. | objects | select(.panes? | type == "array") | .panes as $p | ($p | map(.routine? // "") | index("mobile_local_device")) | select(. != null and . > 0)] | length > 0' "$M" >/dev/null 2>&1 && \
+    say WARN herdr "$M" "the pane running mobile_local_device is not the tab's main pane: list it first, the server and the shell beside it (new-app non-web.md)"
+done
+
+# ---------- iOS: Metro on a port of the project's own ----------
+# The Debug app's port is the with-metro-port plugin's (React Native's core has 8081 compiled in); none = 8081.
+metro_of() { # <service dir>: the port the Debug app asks, or nothing when there is no iOS app
+  [ -f "$1/scripts/ios.sh" ] && grep -q 'run:ios' "$1/scripts/ios.sh" || return 0
+  local p; p=$(cat "$1"/app/app.config.* 2>/dev/null | grep -oE "with-metro-port['\"]\s*,\s*\{\s*port:\s*[0-9]+" | grep -oE '[0-9]+$' | head -1)
+  echo "${p:-8081}"
+}
+for S in "${SERVICES[@]}"; do
+  IOS="$S/scripts/ios.sh"; [ -f "$IOS" ] && grep -q 'run:ios' "$IOS" || continue
+  APP=$(metro_of "$S")
+  # an app on 8081 (no plugin) is caught below if another project's app is on it too
+  [ "$APP" != 8081 ] && grep -Ev '^\s*#' "$IOS" | grep 'run:ios' | grep -vq -- '--port' && \
+    say WARN metro "$IOS" "expo run:ios without --port: Metro takes 8081, which another project's app may hold (Port \"8081\" became busy), and it must be the port the Debug app asks ($APP)"
+  SP=$(grep -oE '^\s*(METRO_)?PORT=[0-9]+' "$IOS" | grep -oE '[0-9]+$' | head -1)
+  [ -n "$SP" ] && [ "$SP" != "$APP" ] && \
+    say FAIL metro "$IOS" "Metro starts on $SP but the Debug app asks $APP: the app would load another project's code (add plugins/with-metro-port.js with the same port, new-app non-web.md)"
+  for o in /Volumes/Projects/*/; do
+    o=${o%/}; [ "$o" = "$ROOT" ] && continue
+    for OS in "$o"/*/; do
+      OP=$(metro_of "${OS%/}"); [ -n "$OP" ] && [ "$OP" = "$APP" ] && \
+        say WARN metro "$S" "Metro port $APP is also $(basename "$o")'s: two apps in dev on one port load each other's code (take a free one, system port registry)"
+    done
+  done
+done
+
 # ---------- port collisions across projects ----------
 # host side of "HOST:CONTAINER" / "IP:HOST:CONTAINER" port mappings in compose files
 ports_of() { grep -hE '^\s*-\s*"?[^ #]*[0-9]+:[0-9]+"?\s*(#.*)?$|ports:\s*\[' "$@" 2>/dev/null \

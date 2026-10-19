@@ -73,7 +73,9 @@ credential. If a step seems to need one of those, something above was skipped.
   first publish, and chooses its store name. Say so; do not pretend it is done.
 - **Routines, the same names in every project:** `module_local_prebuild`, `mobile_local` (simulator),
   `mobile_local_device` (the plugged-in phone), `mobile_signing`, `mobile_publish`, `mobile_submit`, `mobile_archive`
-  and `test`. Every one runs through `varlock run --`. The herdr pane that runs the device build is in the `mobile` profile.
+  and `test`. Every one runs through `varlock run --`. The herdr pane that runs the device build is in the `mobile` profile
+  and is the **main pane of the tab**: the first one listed (in `main-side`, the large one on the left), with the
+  companion server, when there is one, and the `execution-shell` beside it. Its log is the one watched.
 - **A switch that changes what varlock reads goes in the routine, not in a second varlock.** The signing key is
   read only when asked for: `"mobile_signing": "ASC_KEY=1 varlock run -- bash scripts/ios.sh signing"`, with
   `if($ASC_KEY, vaultSecret(…))` in the schema. A script that starts `varlock run` again from inside one failed with
@@ -82,8 +84,12 @@ credential. If a step seems to need one of those, something above was skipped.
   other's code: noice's app showed relay's screens, from relay's Metro on the same Mac. React Native's core is
   prebuilt with 8081 compiled in, so `--port` and `RCT_METRO_PORT` no longer reach the app: a config plugin sets
   the Debug app's address (`RCTBundleURLProvider.sharedSettings().jsLocation`, the Mac's address from `ip.txt`
-  and the project's port), and `scripts/ios.sh` starts Metro there. Reference: `noice/native/app/plugins/with-metro-port.js`.
-  relay's app still uses 8081 and is the only one allowed to.
+  and the project's port), and `scripts/ios.sh` starts Metro there (`npx expo run:ios --port <port>`, for the
+  simulator and the device). Both are needed: with `--port` alone, Metro moved but tags' app still asked 8081 and
+  would have loaded Potion's code; without it, `expo run:ios` stops after a successful build with
+  `Port "8081" became busy running another process` (tags, 2026-10-16). Reference: `noice/native/app/plugins/with-metro-port.js`.
+  Potion's app still uses 8081 and is the only one allowed to. In `ios.sh` call the variable `METRO_PORT`: the
+  app's `.env.schema` may already have a `PORT` (the companion server's), and varlock runs the script.
 - **The values varlock resolves must reach every step of the native build, and nothing falls back in silence.**
   A native build reads the app's config more than once, and a step started by the IDE's build system does not
   inherit the shell's environment. Have the script write the resolved, non-secret values where that step reads
