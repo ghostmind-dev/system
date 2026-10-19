@@ -95,6 +95,18 @@ Not a rule: what the owner has seen so far while adding AI chats to the products
 - The model, the key and the cost are the same whatever the context (bring-your-own OpenRouter, above).
 - Layout creation may later be one shared place for every product, from the same library and the same model.
 
+### An assistant in the app (a chat that uses the app's own functions)
+
+Reference: `/Volumes/Projects/relay` (`api/app/src/assistant/`, `ui/assistant.js`); Potion's Talk (`potion/agent/`, `ui/.../app/talk`) for a longer-lived one.
+
+- **The loop is `@ghostmind-dev/agento`** (Potion's loop as a library), run on the server so the key never reaches the browser: `runAgent({ provider: openrouter({ apiKey, model, decisionModel: 'jev-latest' }), approve, budget: { maxUsd }, stream: true, onEvent })`. `openrouter()` takes the person's key per call, and its `decide` is Jev: the decider is on by default, so show it in the settings (greyed while it is the only one) rather than leave it invisible.
+- **Its tools are the product's own MCP, called as the person** (`tools/list` and `tools/call` POSTed to `/mcp` with their bearer token). A stateless MCP (SDK v2) answers both with no `initialize` and no session, as one server-sent event. This keeps one list of tools: Potion and Tags each wrote their agent's tools a second time and the two lists drifted.
+- **Every tool that is not a read is a `write`** with a one-sentence `describe(args)`: the loop waits on `approve` for the person's yes. A stop, or a stream the page closed, must answer `false` to every approval still waiting, or the turn sits there until the approval times out and refuses the next one ("already answering").
+- **The turn is server-sent events in the answer to its POST**; yes, no and stop are separate POSTs. Conversations go in a table (`ai_sessions`: what the model is given again, and what the person saw, with the cost).
+- **It is a page of its own** (`/chat`, Potion's `/talk`), not a panel over the app: a panel was built first and the user asked for a page.
+- **The plugin's skills, given to the agent, travel in the image**: the image is built from the app's folder, so they are copied in and kept identical by the project's mirror check.
+- **Test it for $0** with agento's `scriptedModel(script, { decide: false })` (no Jev, so no guide checkpoints change the script) and a pretend MCP. A scripted step written as a function sees the question as a user message starting `Task:`; the engine also adds its own `Current request: …` reminder as the last user message, so do not read the last message as the question.
+
 ## Payments: billing
 
 A product that sells a plan does not integrate Stripe. It uses **billing** (`/Volumes/Projects/billing`, repo `ghostmind-app/billing`): one Stripe account, one webhook and one Stripe customer per person, for every product. The product gets no Stripe key, no Stripe package, no webhook route and no billing table. Its README has the contract and stays the source of truth; this is the order of work.
