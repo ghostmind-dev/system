@@ -8,6 +8,7 @@
   "repository": "https://github.com/ghostmind-dev/system",
   "skills": [
     "./skills/system",
+    "./skills/kickoff",
     "./skills/new-app",
     "./skills/secrets",
     "./skills/deploy",

@@ -174,9 +174,9 @@ export TAILSCALE_IP=$(tailscale ip -4)        # only if the Mac reaches this por
   "name": "<app>",
   "type": "app",
   "routines": {
-    "dev": "skaffold dev --no-prune",
-    "dev_keep": "skaffold dev --no-prune --cleanup=false",
-    "delete": "skaffold delete"
+    "dev": "bash ../scripts/skaffold.sh dev --no-prune",
+    "dev_keep": "bash ../scripts/skaffold.sh dev --no-prune --cleanup=false",
+    "delete": "bash ../scripts/skaffold.sh delete"
   },
   "herdr": { "workspaces": [ { "label": "<project>", "tabs": [ {
     "label": "<app>", "prefix": false, "layout": "compact",

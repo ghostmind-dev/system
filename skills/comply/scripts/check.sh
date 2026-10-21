@@ -21,7 +21,7 @@ say() { # level rule path message
 has() { grep -Eq -- "$1" "$2" 2>/dev/null; }
 
 # ---------- root layout ----------
-ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|k8s|shared|\.dockerignore|\.history|node_modules)$'
+ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|k8s|scripts|shared|\.dockerignore|\.history|node_modules)$'
 is_service() { [ -d "$1" ] && { [ -f "$1/meta.json" ] || [ -d "$1/docker" ] || [ -f "$1/.env.schema" ] || [ -d "$1/app" ]; }; }
 SERVICES=()
 for p in "$ROOT"/* "$ROOT"/.[!.]*; do
@@ -29,7 +29,7 @@ for p in "$ROOT"/* "$ROOT"/.[!.]*; do
   n=$(basename "$p")
   if is_service "$p"; then SERVICES+=("$p"); continue; fi
   echo "$n" | grep -Eq "$ALLOWED_ROOT" && continue
-  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/, k8s/, shared/ with its .dockerignore, and service folders)"
+  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/, k8s/, scripts/, shared/ with its .dockerignore, and service folders)"
 done
 [ ${#SERVICES[@]} -eq 0 ] && is_service "$ROOT" && SERVICES=("$ROOT")   # a single-service folder passed directly
 
@@ -139,11 +139,11 @@ for S in "${SERVICES[@]}"; do
       SK="$S/skaffold.yaml"
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
-        has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; skaffold dev uses the current kube context (paired with the Docker context on the same machine)"
+        has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; the routines use the current kube context through scripts/skaffold.sh, which derives the Docker context"
         # a script that names a cluster is the same pin, one file away (scripts/skaffold.sh with DOCKER_HOST=ssh://m1, kubectl --context m1)
         for SH in "$S"/scripts/*.sh; do
           [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -Eq 'DOCKER_HOST=ssh://|--(kube-)?context[ =](m1|m3|orbstack)\b' && \
-            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; switch the kube and Docker contexts instead (new-app kubernetes.md, Dev machines)"
+            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; switch the kube context and let scripts/skaffold.sh derive the Docker one (new-app kubernetes.md, Dev machines)"
         done
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
         has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the cluster on the Docker host uses the image directly)"
@@ -152,7 +152,8 @@ for S in "${SERVICES[@]}"; do
       DI="$S/.dockerignore"; [ -f "$SK" ] && has 'context:\s*\.\.' "$SK" && DI="$ROOT/.dockerignore"
       # only an image that installs dependencies needs one (not cloudflared or Hasura)
       [ ! -f "$S/app/package.json" ] || { [ -f "$DI" ] && has 'node_modules' "$DI"; } || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist (at the repo root for an app that builds from it): the Mac's node_modules would hide the image's own"
-      [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
+      [ -f "$M" ] && ! has '"dev"\s*:\s*"bash \.\./scripts/skaffold\.sh dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"bash ../scripts/skaffold.sh dev --no-prune\": called directly, skaffold builds on whatever Docker context is current, which drifts from the kube context (new-app kubernetes.md, Dev machines)"
+      SKAFFOLD_APPS=1
       ls "$K"/*.dev.yaml | while read -r dm; do
         grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"
       done
@@ -212,6 +213,51 @@ for S in "${SERVICES[@]}"; do
   if [ "$(basename "$S")" = mcp ] && [ ! -f "$ROOT/plugin/.mcp.json" ]; then
     say WARN plugin "$ROOT" "the product has an MCP but no plugin/ (.mcp.json + skill): products are AI-operable by default"
   fi
+done
+
+[ -n "${SKAFFOLD_APPS:-}" ] && [ ! -f "$ROOT/scripts/skaffold.sh" ] && \
+  say WARN skaffold "$ROOT" "no scripts/skaffold.sh: the routines need it to build on the Docker of the selected cluster (copy /Volumes/Projects/tags/scripts/skaffold.sh)"
+
+# ---------- herdr: the root claude pane, the mobile tab ----------
+RM="$ROOT/meta.json"
+if [ -f "$RM" ]; then
+  PROFILES=$(cat "$ROOT"/*/meta.json 2>/dev/null | jq -r '.. | objects | .profiles? // empty | .[]' 2>/dev/null | sort -u)
+  CLAUDE=$(jq -r '[.. | objects | select(.routine? == "claude") | .profiles[]?] | .[]' "$RM" 2>/dev/null | sort -u)
+  if ! jq -e '.. | objects | select(.routine? == "claude")' "$RM" >/dev/null 2>&1; then
+    say WARN herdr "$RM" "no pane runs the routine claude: the root claude tab's pane names it (\"claude\": \"claude\") so a profile starts Claude too"
+  else
+    for pr in $PROFILES; do echo "$CLAUDE" | grep -qx "$pr" || say WARN herdr "$RM" "the claude pane is not in the profile $pr: put it in every profile the apps name"; done
+  fi
+fi
+for S in "${SERVICES[@]}"; do
+  M="$S/meta.json"; [ -f "$M" ] || continue
+  jq -e '[.. | objects | select(.panes? | type == "array") | .panes as $p | ($p | map(.routine? // "") | index("mobile_local_device")) | select(. != null and . > 0)] | length > 0' "$M" >/dev/null 2>&1 && \
+    say WARN herdr "$M" "the pane running mobile_local_device is not the tab's main pane: list it first, the server and the shell beside it (new-app non-web.md)"
+done
+
+# ---------- iOS: Metro on a port of the project's own ----------
+# The Debug app's port is the with-metro-port plugin's (React Native's core has 8081 compiled in); none = 8081.
+metro_of() { # <service dir>: the port the Debug app asks, or nothing when there is no iOS app
+  [ -f "$1/scripts/ios.sh" ] && grep -q 'run:ios' "$1/scripts/ios.sh" || return 0
+  local p; p=$(cat "$1"/app/app.config.* 2>/dev/null | grep -oE "with-metro-port['\"]\s*,\s*\{\s*port:\s*[0-9]+" | grep -oE '[0-9]+$' | head -1)
+  echo "${p:-8081}"
+}
+for S in "${SERVICES[@]}"; do
+  IOS="$S/scripts/ios.sh"; [ -f "$IOS" ] && grep -q 'run:ios' "$IOS" || continue
+  APP=$(metro_of "$S")
+  # an app on 8081 (no plugin) is caught below if another project's app is on it too
+  [ "$APP" != 8081 ] && grep -Ev '^\s*#' "$IOS" | grep 'run:ios' | grep -vq -- '--port' && \
+    say WARN metro "$IOS" "expo run:ios without --port: Metro takes 8081, which another project's app may hold (Port \"8081\" became busy), and it must be the port the Debug app asks ($APP)"
+  SP=$(grep -oE '^\s*(METRO_)?PORT=[0-9]+' "$IOS" | grep -oE '[0-9]+$' | head -1)
+  [ -n "$SP" ] && [ "$SP" != "$APP" ] && \
+    say FAIL metro "$IOS" "Metro starts on $SP but the Debug app asks $APP: the app would load another project's code (add plugins/with-metro-port.js with the same port, new-app non-web.md)"
+  for o in /Volumes/Projects/*/; do
+    o=${o%/}; [ "$o" = "$ROOT" ] && continue
+    for OS in "$o"/*/; do
+      OP=$(metro_of "${OS%/}"); [ -n "$OP" ] && [ "$OP" = "$APP" ] && \
+        say WARN metro "$S" "Metro port $APP is also $(basename "$o")'s: two apps in dev on one port load each other's code (take a free one, system port registry)"
+    done
+  done
 done
 
 # ---------- port collisions across projects ----------

@@ -4,7 +4,7 @@ description: >-
   The Ghostmind development system: how every project is built, configured, secured and deployed.
   Load first for any work on a Ghostmind project — creating an app, adding a service (web, remote MCP,
   worker, DB, tunnel), secrets or env vars, Docker, Kubernetes (k3s, Skaffold), Compose, deploys,
-  servers, meta.json, routines, herdr, or the `run` CLI. Routes to the new-app, secrets, deploy, database, migrate and comply skills.
+  servers, meta.json, routines, herdr, or the `run` CLI. Routes to the kickoff, new-app, secrets, deploy, database, migrate and comply skills.
 ---
 
 # Ghostmind System
@@ -19,7 +19,7 @@ The system is **a few plain tools plus reference apps**. There is no framework t
 
 **Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception: no product holds a compose file any more (the Compose hosts are Vault's own server and the house's Zigbee bridge on a Raspberry Pi, both outside the cluster). Start from Kubernetes, and reach for Compose only when the target can't be the cluster.
 
-Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user asks for a debrief (`/system:debrief`, or in their own words: "update the system with what you learned"): what it taught goes back into these skills and into the `toolkits` skills.
+Creating something new → `new-app`; setting up only its folder and herdr workspace and moving the work to a Claude session there → `kickoff`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user asks for a debrief (`/system:debrief`, or in their own words: "update the system with what you learned"): what it taught goes back into these skills and into the `toolkits` skills.
 
 ## Rules every project follows
 
@@ -44,7 +44,7 @@ Creating something new → `new-app`. A Postgres DB → `database`. Converting a
 9. **Expose only what must be public.** A Cloudflare tunnel exists only if an endpoint is public, and it sends each hostname straight to its app's Service. There is no Traefik. A product that has a public endpoint has its `tunnel/` app from the start, in dev (`<app>.ghostmind.app`) and in prod (`<app>.ghostmind.dev`): the tunnel is part of the product's structure, not a step of its first deploy.
 10. **Apps stay portable.** The image plus `.env.schema` is the app. No app depends on a Kubernetes feature to work, so it can run under Compose, on Cloud Run or on another cluster unchanged.
 11. **Every publish asks which version first.** A script that ships a versioned thing to people (an iOS build, a Chrome extension zip, a Mac release: the `mobile_publish`, `extension_build` and `release` routines) asks, before it builds, which release this is: patch, minor, major, keep the current version or a version typed in full, each choice shown with the version it gives; Enter takes the patch. An answer it does not know stops before anything is built. A routine that only sends again a build already on disk (`mobile_submit`) asks nothing. References: `/Volumes/Projects/tags/native/scripts/publish.sh` (iOS), `/Volumes/Projects/tags/chrome/scripts/extension-build.sh` (extension), `/Volumes/Projects/format/mac/scripts/release.sh` (Mac).
-12. **A project's folder is shared with other sessions.** Another Claude session, and the `skaffold dev` panes, may be working in the same folder right now. Before changing a repo that is not this session's own project: list the sessions (`ListAgents`) and tell the one that owns it which files you will change (`SendMessage`). Then work in a copy of your own, `git worktree add ../<project>-<topic> -b <topic> origin/main`, and bring the change back as a pull request.
+12. **A project's folder is shared with other sessions.** Another Claude session, and the `skaffold dev` panes, may be working in the same folder right now. Before changing a repo that is not this session's own project: list the sessions (`ListAgents`) and tell the one that owns it which files you will change (`SendMessage`). Then work in a copy of your own, a worktree inside the repository (Claude Code's `.claude/worktrees/`), never a folder beside the project at the root of `/Volumes/Projects` (`run projects` would list it as a second project), and bring the change back as a pull request. Remove the worktree (`git worktree remove <path>`) when it is merged or abandoned.
     - **Commit by naming the files**: `git commit -m … -- <paths>`. Never `git commit -a` or `git add -A` there: an uncommitted file in that tree is somebody's work in progress, and `-a` shipped another session's version bump to prod inside an unrelated commit (potion, 2026-10-13).
     - **No `git stash`, `git checkout <branch>` or `git switch` in the shared folder**: a running `skaffold dev` builds from it (`new-app` → kubernetes.md, Dev machines, says what breaks).
     - **Stop only your own processes, by their id.** `pkill -f scripts/publish.sh` matches every project's publish on the machine: it killed a second session's iOS build mid-archive (relay, 2026-10-13). One publish of an app at a time: say you are starting one.
@@ -130,6 +130,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/format` (OpenRouter PKCE, key AES-GCM in an `ai_connections` table no user role can read); same pattern as `potion/agent/ai-connection.ts` |
+| **An assistant in the app** | A chat that understands the product and acts in it with the person's yes | `/Volumes/Projects/relay` (`api/app/src/assistant/`: `@ghostmind-dev/agento` on the person's key, Jev as decider, the product's own MCP as its tools, `/chat` as a page). `new-app` → blocks.md → *An assistant in the app* |
 | **Payments** (billing) | The product sells a plan | `/Volumes/Projects/billing` (its README: the contract); the product's side: `/Volumes/Projects/tags/shared/server/billing.ts`. One Stripe account, one webhook and one customer per person for every product; the product holds a billing token and no Stripe key. `new-app` → blocks.md → *Payments: billing* |
 | Terraform | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/tags/bucket` (Terraform in a container through varlock) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
@@ -160,7 +161,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Vault, app secrets | `ghostmind/project/<project>/<app>` (+ `/dev`, `/prod`) | `ghostmind/project/potion/mcp/prod` |
 | Vault, shared secrets | `ghostmind/global/<provider>`; look it up live (`secrets` skill) | `ghostmind/global/openrouter` |
 | Database | `<project>_<app>_<env>` | `potion_db_prod` |
-| Routines | `dev` (`skaffold dev`), then verbs (`migrate`, `console`); no `prod` routine | |
+| Routines | `dev` (`skaffold dev` through the project's `scripts/skaffold.sh`), then verbs (`migrate`, `console`); no `prod` routine | |
 | Public host | `<app>.ghostmind.app` (dev) / `<app>.ghostmind.dev` (prod); see Domains | `format.ghostmind.app` / `format.ghostmind.dev` |
 
 ## Domains
@@ -194,12 +195,12 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | Project | Ports |
 |---|---|
 | portal | ui 5096 |
-| tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 |
+| tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 · iOS: Metro 8085 |
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
-| potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
+| potion | ui 5001 · mcp 3020 · chrome 3025 (its extension's hot reload 8082) · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 · iOS: Metro 8081 |
 | noice | ui 5065 · db 5066 · engine 5068 · Hasura console 9735 / api 9733 · iOS: Metro 8083, pretend backend 5069 |
-| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 · iOS: Metro 8081 |
+| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 · iOS: Metro 8084 |
 | db | postgres 5432 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
@@ -208,7 +209,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
 | vault | 8200 |
 
-For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
+For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports, 8081–8099 for an iOS app's Metro. `comply`'s check compares every project's Metro port and reports two that are the same.
 
 ## meta.json and `run`
 
@@ -222,7 +223,7 @@ For a new project, pick unused numbers in the usual ranges: 5000–5999 for web 
 - `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` blocks. `init --start` also runs the routine each pane names; `--profile <name>` or `--only <tab/pane,...>` narrows which.
 - `run herdr colors [on|off]`: shows or hides each project's colour mark in herdr's sidebar. Fetch the schema before editing a `herdr` block: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
 
-A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. In the `herdr` block, a workspace may carry a `color` (its mark in herdr's sidebar), and a pane may name the `routine` it usually runs and the `profiles` it is part of. A profile is a set of routines started together for one way of working on a project (`web`, `mobile`), tagged pane by pane across the project's apps.
+A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. In the `herdr` block, a workspace may carry a `color` (its mark in herdr's sidebar), and a pane may name the `routine` it usually runs and the `profiles` it is part of. A profile is a set of routines started together for one way of working on a project (`web`, `mobile`), tagged pane by pane across the project's apps. **The root `meta.json` has a `claude` tab whose pane runs the routine `claude` (`"claude": "claude"`) and is in every profile the project's apps name**, so opening any profile starts a Claude session with it; add the new profile there when an app introduces one.
 
 **Removed in run 0.9.0, they no longer exist:** `run custom`, `run vault kv`, `run docker`, `run terraform`, `run tmux`, `run meta`, `run action`, `run misc`, and the meta.json keys `compose`, `docker`, `terraform`, `custom`, `tmux`, `template`, `global`. A project still calling one is converted with the `migrate` skill: its scripts become `scripts/*.sh`.
 
@@ -233,7 +234,7 @@ A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root
 - No devcontainers: everything runs on the Mac host (projects under `/Volumes/Projects`).
 - **This text may be older than the repo.** The plugin Claude loads is an installed copy; the source is `/Volumes/Projects/system/skills`. On a Mac that has the repo, read the port registry, the reference table and `database` there before acting on them: block was first given two Hasura ports that relay already held, and was sent to a shared RDS that had been removed, both from an installed copy a few days old.
 - **The shared dev services are on the M1's cluster only**: the users service (`state.users.svc.cluster.local`) and the shared Postgres (`db-postgres.db.svc.cluster.local`). A product that signs people in or has a database runs its dev on the M1 (`new-app` → kubernetes.md → Dev machines); on this Mac's own cluster those names do not resolve.
-- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **A dev machine is a pair**, a kube context and a Docker context for the same OrbStack, switched together (`kubectl config use-context X && docker context use X`): an image exists only on the daemon that built it. Contexts are per Mac and **no file in a repo names a cluster** (no `kubeContext` in `skaffold.yaml`): `skaffold dev` uses the current context. Another Mac's OrbStack over Tailscale needs its Docker context on an SSH-forwarded unix socket, not `ssh://` (Skaffold cannot dial it): `new-app` → kubernetes.md → Dev machines. `ghostmind` is the prod context (read-only use): scripts that touch prod always pass `--context ghostmind`, never the current context.
+- **OrbStack** replaces Docker Desktop: Docker plus a local Kubernetes cluster, and the cluster uses locally built images with no push. **A dev machine is a pair**, a kube context and a Docker context for the same OrbStack: an image exists only on the daemon that built it. You switch the kube context only; the project's `scripts/skaffold.sh` derives the Docker one (this Mac's `orbstack` for a cluster on 127.0.0.1, else the Docker context of the same name). Contexts are per Mac and **no file in a repo names a cluster** (no `kubeContext` in `skaffold.yaml`). Another Mac's OrbStack over Tailscale needs its Docker context on an SSH-forwarded unix socket, not `ssh://` (Skaffold cannot dial it): `new-app` → kubernetes.md → Dev machines. `ghostmind` is the prod context (read-only use): scripts that touch prod always pass `--context ghostmind`, never the current context.
 - After an OrbStack restart, builds can fail with `proxy.orb.internal … i/o timeout`: `orb stop && orb start`. OrbStack has 10 GB of RAM.
 - Compose paths (when an app has them) are **relative to the compose file**; `SRC`/`LOCALHOST_SRC` are legacy.
 - `VAULT_ADDR` and `VAULT_TOKEN` are exported in the shell. There is no `~/.vault-token`, so schemas pass the token explicitly.

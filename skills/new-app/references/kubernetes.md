@@ -29,7 +29,7 @@ The dev pre-deploy hook (`k8s/dev-setup.sh` at the project root, shared by the a
 - **A project with a `shared/` folder builds from the repo root** (potion, tags): TypeScript used by several backends lives in `shared/pure` and `shared/server` at the root and is imported through a `@shared/*` alias. Those apps set skaffold `context: ..` with `dockerfile: <app>/docker/Dockerfile`, list `shared/**` and `<app>/app/src/**` under `sync.infer`, use `context: .` in CI, and share ONE root `.dockerignore`; the Dockerfile copies `shared` next to the app so the image mirrors the repo. Changing `context` in a `skaffold.yaml` is not picked up by a running `skaffold dev`: stop it and start it again.
 - **An app that uses a package kept in the same repo** (block: `mcp` and `ui` use `lib/app`, the npm package the product is about) reads it as a `file:` dependency (`"@ghostmind-dev/block": "file:../../lib/app"`) and builds from the repo root the same way: `context: ..`, a Dockerfile that copies `lib/app` to the place it has in the repo before `npm install` (the dependency is a link to it), `lib/app/src/**` under `sync.infer`, and the root `.dockerignore`. An edit to the package then reaches the running app like an edit to the app. Reference: `/Volumes/Projects/block/ui` (`docker/Dockerfile`, `skaffold.yaml`; Vite also needs `server.fs.allow` to reach outside the app's folder).
 - **Never put a `Namespace` object in an app's files.** CI isn't allowed to create namespaces, and Skaffold would delete a shared namespace on Ctrl-C. The pre-deploy hook creates it.
-- **No file names a cluster.** `skaffold.yaml` has no `deploy.kubeContext`: `skaffold dev` deploys to the current kube context and builds on the current Docker context, which must be the same machine (Dev machines, below).
+- **No file names a cluster.** `skaffold.yaml` has no `deploy.kubeContext`: the routines deploy to the current kube context, through the project's `scripts/skaffold.sh`, which builds on the Docker of that same machine (Dev machines, below).
 
 ## Prod manifest: `k8s/<app>.yaml`
 
@@ -110,11 +110,11 @@ portForward:
 ```
 
 - **Hot reload is required.** `sync: infer` copies each edited file matching those patterns into the running container, at the path the Dockerfile's `COPY` lines give it, and the dev server (Vite, Next, nodemon…) reloads. A change outside the synced folders (`package.json`, the Dockerfile) rebuilds the image. List the source folders the dev server watches, and nothing that needs a rebuild.
-- **Routines**, every Kubernetes app gets these in its `meta.json`, run in the app folder (one `skaffold dev` per app, each showing only its own logs):
-  - `dev`: `skaffold dev --no-prune`. Ctrl-C removes the workload and keeps the image.
-  - `dev_keep`: `skaffold dev --no-prune --cleanup=false`. Ctrl-C leaves the workload running.
-  - `delete`: `skaffold delete`. Removes a workload left running; the image stays.
-  - `start`: `skaffold run --no-prune`, detached, for an always-on shared service (the dev users service).
+- **Routines**, every Kubernetes app gets these in its `meta.json`, run in the app folder (one `skaffold dev` per app, each showing only its own logs). Each goes through the project's `scripts/skaffold.sh` (Dev machines, below), never `skaffold` directly:
+  - `dev`: `bash ../scripts/skaffold.sh dev --no-prune`. Ctrl-C removes the workload and keeps the image.
+  - `dev_keep`: `bash ../scripts/skaffold.sh dev --no-prune --cleanup=false`. Ctrl-C leaves the workload running.
+  - `delete`: `bash ../scripts/skaffold.sh delete`. Removes a workload left running; the image stays.
+  - `start`: `bash ../scripts/skaffold.sh run --no-prune`, detached, for an always-on shared service (the dev users service).
   There is no `prod` routine.
 - **`localPort`** comes from the port registry in the `system` skill: it's a port on the Mac, so it must be unique across projects.
 
@@ -141,13 +141,16 @@ Apps that need users read `DB_USERS_ENDPOINT` from Vault like any other value; n
 
 ## Dev machines: the kube context and the Docker context travel together
 
-Images are built with `push: false`: an image exists only on the Docker daemon that built it, and only the cluster on that same machine can run it. A dev machine is therefore a **pair**, a kube context and a Docker context for the same OrbStack. Switch both, or the pods fail with `container … can't be pulled`:
+Images are built with `push: false`: an image exists only on the Docker daemon that built it, and only the cluster on that same machine can run it. A dev machine is therefore a **pair**, a kube context and a Docker context for the same OrbStack, and **the pair is derived, never kept in step by hand**: you choose the cluster (`kubectl config use-context <machine>`), and the project's `scripts/skaffold.sh` (repo root, copy `/Volumes/Projects/tags/scripts/skaffold.sh`) picks the Docker from it. Every skaffold routine calls it:
 
-```
-kubectl config use-context <machine> && docker context use <machine>
-```
+- a cluster on this Mac (its server is `127.0.0.1`: contexts `orbstack`, `m3` on the M3) builds with this Mac's Docker, context `orbstack`;
+- a cluster on another Mac (`m1`) builds with the Docker context **of the same name**, which must exist (`docker context ls`), or the script stops;
+- the prod context `ghostmind` is refused;
+- it passes `--kube-context` and `DOCKER_CONTEXT` to skaffold, so switching contexts while it runs changes nothing.
 
-Contexts live in `~/.kube/config` and `~/.docker/contexts`, per Mac, and **no file in a repo names one**: `skaffold.yaml` has no `deploy.kubeContext`, scripts and manifests name no cluster. The one thing a pin used to buy, never deploying dev to prod, is now a habit: look at `kubectl config current-context` before a dev routine.
+Kept by hand, the two drift: with the kube context on `m1` and Docker left on the local `orbstack`, every pane of a project failed at once with `failed to connect to the docker API at unix:///…/.orbstack/run/docker.sock` (tags, 2026-10-16); the other way round, the pods fail with `container … can't be pulled`. Do not use `DOCKER_HOST` instead: Skaffold reads `DOCKER_CONTEXT` (it runs `docker context inspect`), and **a context name that does not exist only logs a warning and falls back to the default Docker**, which is why the script checks it first.
+
+Contexts live in `~/.kube/config` and `~/.docker/contexts`, per Mac, and **no file in a repo names one**: `skaffold.yaml` has no `deploy.kubeContext`, scripts and manifests name no cluster. Look at `kubectl config current-context` before a dev routine; the script prints the pair it chose.
 
 **The switch must be seen to have worked.** `kubectl config use-context` answers `error: open ~/.kube/config.lock: file exists` when a `kubectl` that died left its lock behind, and the context stays where it was: every dev routine after that goes to the wrong cluster while the command line looks right. Read `kubectl config current-context` after switching. A lock that is empty and older than any running `kubectl` is removed by hand (`ls -la ~/.kube/config.lock`, then `rm`). This is how a project was deployed twice, once on the laptop's own cluster where its database could not start (block, 2026-10-13).
 
