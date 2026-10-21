@@ -223,17 +223,13 @@ for S in "${SERVICES[@]}"; do
   fi
 done
 
-# ---------- herdr: the root claude pane, the mobile tab ----------
-RM="$ROOT/meta.json"
-if [ -f "$RM" ]; then
-  PROFILES=$(cat "$ROOT"/*/meta.json 2>/dev/null | jq -r '.. | objects | .profiles? // empty | .[]' 2>/dev/null | sort -u)
-  CLAUDE=$(jq -r '[.. | objects | select(.routine? == "claude") | .profiles[]?] | .[]' "$RM" 2>/dev/null | sort -u)
-  if ! jq -e '.. | objects | select(.routine? == "claude")' "$RM" >/dev/null 2>&1; then
-    say WARN herdr "$RM" "no pane runs the routine claude: the root claude tab's pane names it (\"claude\": \"claude\") so a profile starts Claude too"
-  else
-    for pr in $PROFILES; do echo "$CLAUDE" | grep -qx "$pr" || say WARN herdr "$RM" "the claude pane is not in the profile $pr: put it in every profile the apps name"; done
-  fi
-fi
+# ---------- herdr: Claude is never a routine, the mobile tab ----------
+# run routine starts Claude without a terminal: it falls into --print mode and exits
+for M in "$ROOT/meta.json" $(printf '%s/meta.json\n' "${SERVICES[@]}"); do
+  [ -f "$M" ] || continue
+  jq -e '(.routines // {} | to_entries | any(.value | test("^claude( |$)"))) or ([.. | objects | select(.routine? == "claude")] | length > 0)' "$M" >/dev/null 2>&1 && \
+    say WARN herdr "$M" "Claude is a routine: run routine starts it without a terminal and it exits in --print mode. Remove the claude routine and the pane's \"routine\": \"claude\"; the person starts Claude by hand"
+done
 for S in "${SERVICES[@]}"; do
   M="$S/meta.json"; [ -f "$M" ] || continue
   jq -e '[.. | objects | select(.panes? | type == "array") | .panes as $p | ($p | map(.routine? // "") | index("mobile_local_device")) | select(. != null and . > 0)] | length > 0' "$M" >/dev/null 2>&1 && \
