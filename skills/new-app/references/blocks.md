@@ -65,9 +65,35 @@ The remote MCP gives Claude the app's **actions**; a skill gives it the app's **
 - **Keep them in step.** A new or renamed MCP tool updates the skill in the same change, and bumps `plugin.json`'s `version` so installed copies refresh.
 - **Dev and prod.** The published `.mcp.json` points to prod. To try unreleased tools, add the dev URL (`https://<app>.ghostmind.app/mcp`) as a separate MCP in your own Claude config; never ship it.
 
+## Letting a person make layouts: block is the model
+
+A product that lets a person make their own html for a part of it (the details of a place, the bubble on a map, a card, a dashboard) builds it the way block does: **block is the model** (owner, 2026-10-18), the package for what every app shares and block's `/make` (`block/ui/app/src/make.tsx`, `block/mcp/app/src/drafts/`) for how a layout is made. **The integration example is an individual app**, Potion first, where the html block started: how a layout gets the product's real data and is saved and used in the product (`potion/mcp/app/src/tools/layout-live.ts`, `potion/ui/app/src/app/layouts/live/`). Build a new part of it in block first; the products follow.
+
+- **A layout is a room, its data, and its source.** The room is set by the person: a width (exact, or at most) and a height (exact, at most, or as tall as its content). Not a kind of place to choose from: the place is the product's, the layout only needs to fit it, and while it is made it is drawn as its frame and its size, never inside a simulation of the place.
+- **The data comes through one function, never through the source.** A layout asks for the object it shows with `await <app>.self()` (`selfHost(name)`), and reads only its fields (`name` text, `opens_at` date…). In the product, the product's `self()` answers with the real object; while it is made, with made-up data (the draft's sample) that the model writes first, in exactly those fields. Nothing is required: a field the product does not have is simply not drawn. The fields are the layout's contract with the product (`shapeOf`, `fieldsText`).
+- **The live draft is the loop.** One draft per person (or workspace), written by the chat, by any agent on the MCP and by the person in its code, with a `version` that goes up at each write; the open page asks for the version each second and draws it again when it changed, so a layout changes while the model is still working, whoever writes it. Publishing keeps it as a layout only when the person asks, saying what it replaces.
+- **The chat is the person's own model** (bring-your-own OpenRouter, below) and may change everything: the look, the fields, the room, the sample. Every check of the source is said to it in words (`sourceProblems` for what the frame refuses, shown to the person; `roomAdvice` for how it fits, for the model only).
+- **A page of its own, minimal** (block's `/make`): the layouts on the left, one drawn on the right; editing turns the left into the chat and fills the window; the room and the data in a window over the page; no browser `confirm()`.
+- **Where a product has no data of its own** (block itself), a block is a layout and its data written once (`create_block_from_layout`), drawn with the layout's current source, so a better layout improves every block made from it.
+
 ## Bring-your-own OpenRouter
 
-When users pay for their own AI: the user connects their key through OpenRouter's PKCE flow, and it is stored AES-GCM-encrypted in an `ai_connections` table that no user role can read. The product never falls back to the owner's key. References: `/Volumes/Projects/format`, and `potion/agent/ai-connection.ts` for the same pattern.
+When users pay for their own AI: the person connects their own OpenRouter key, the models offered are read live, and a
+model they chose is never swapped for another. The whole block, with code and traps: [openrouter.md](openrouter.md).
+
+## An AI chat in an app: contexts with different reach (an observation)
+
+Not a rule: what the owner has seen so far while adding AI chats to the products (2026-10-18), for a product to weigh. A product's chat tends to have several **contexts**, which differ by what they need to reach. Whether they are one chat with a switch, a page each, or one chat that decides, is the product's call, and still open.
+
+| Context | It needs | It does not need | Examples |
+|---|---|---|---|
+| **Data** (ask) | the person's own data, read and searched; the product's actions on it, every write waiting for the person's approval | | Potion: chat with your notes, make a new note (which may hold an html block). noice: which sounds do I have, play this one. tags: questions and actions on the map |
+| **Make** | the product's own tools and engine, to make a new thing of its kind | the person's existing data | noice: make a new sound with its sound system (bass, effects…), without the sounds already made |
+| **Layout** | the live draft and made-up data only (*Letting a person make layouts*, above) | the person's data and the product's tools | the noice player and its effects, a tags place panel, a Relay dashboard, a Potion layout |
+
+- **Where a context is kept apart, it is kept apart by what the model is handed**, not by asking it to respect a limit: the loop (`runTurn` in `@ghostmind-dev/block`, or the product's own) runs only the tools it is given. The one firm case is Layout: a layout knows no real data (*Letting a person make layouts*, above), so its conversation is given the draft tools and the sample, nothing else.
+- The model, the key and the cost are the same whatever the context (bring-your-own OpenRouter, above).
+- Layout creation may later be one shared place for every product, from the same library and the same model.
 
 ### An assistant in the app (a chat that uses the app's own functions)
 
@@ -155,12 +181,14 @@ What the package is, and what stays the product's:
 - **The page that shows blocks closes its own `frame-src`** (the package's `PAGE_POLICY`, `frame-src 'none'`, or the list of hosts the page really embeds). The frame's policy cannot stop a script from setting its own frame's `location` to an outside address with a person's data in it; only the page around it can. A frame written with `srcdoc` is not refused. In a web view the same job is `onShouldStartLoadWithRequest` refusing every load after the first.
 - **Declare the slots once, on the server**, and give the same objects to `mount` and to the tool descriptions (`/Volumes/Projects/block/mcp/app/src/blocks/slots.ts`, `contract.ts`). A size written by hand in a tool description and again in the page's CSS drifts: tags stated its hover width three different ways.
 - **Bring a block's libraries before saving it** (`loadAll`, as `block/mcp/app/src/blocks/check.ts` does), and refuse the save with the reason when one cannot be brought. The model then fixes the name instead of leaving a block that shows an error.
+- **One slot object per place, made once.** `mount` makes the frame again when its slot changes, and a slot is compared as an object: a `defineSlot(...)` (or `roomSlot(...)`) written inside a render is a new slot on every render, so the frame is made again, reports its size, renders, and is made again, until the browser dies. Declare slots at module level, or keep one per room in a map (`block/ui/app/src/room.ts`). Seen: Chrome closed twice in a minute on block's `/make` (2026-10-18).
 - **Show what the block threw.** `mount`'s `onError` gives the message; a block that throws is otherwise an empty box nobody can explain.
 - **Never loosen the frame for a feature.** A block that needs something from outside gets a call on the product's host (a picture from the web: the app fetches it and hands it in, as `tags.image` does).
 - **It is on npm at an exact version** (`"@ghostmind-dev/block": "0.3.1"`), like any other dependency. A page with no bundler is served the package's own files under its version (`/ui/block@<version>/`, imported with `import()`): noice's `ui/app/src/server.js` and relay's `api/app/src/server.js`. The package's `exports` has no `./package.json`, so `require('@ghostmind-dev/block/package.json')` throws `ERR_PACKAGE_PATH_NOT_EXPORTED`: read the version with `fs` from `dirname(require.resolve('@ghostmind-dev/block'))/../package.json`.
 - **A block in place of a part of the page** (a person's own Player, a layout): a slot with a fixed width and height, `mount(..., { mode: 'fill' })`, and the page's inks given as CSS variables in `style`, with `*, *::before, *::after { box-sizing: border-box }` (without it, padding on a `height: 100%` box pushed a layout's last control out of sight). The page opens that place on a veil and lifts it on `onReady`, so the product's own version never shows for a moment before the person's. The product's own version stays in the page, hidden, and is shown when the block cannot be. The same lent functions in the iOS app: the same document through `documentOf(..., { transport: 'webview' })`. Reference: noice (`ui/app/src/layouts.js`, `ui/app/src/ui/app.js` *layouts*, `native/app/components/LayoutView.tsx`).
 - **Proving it.** A frame in a tab that is not showing has no size and paints nothing: a screenshot of it is white, and a block there looks stuck on its skeleton. Look at it in a tab that is in front. Browser automation cannot click or type inside the sandboxed frame: test the page's side on a small page that imports the real files and is given a pretend backend, and make a trial block act by itself and report what it sees through a call. A real device at home is never the test.
 - **The skill.** The rules every block follows are the `html-block` skill of the `block` plugin. The product's own skill says only what is its own (its functions, its libraries, its places) and points to that one, with "where the two differ, this one is right".
+- **The repo's own apps run the package from disk in dev.** block's `ui` and `mcp` pin the npm version for prod, and in any image built without `APP_ENV=prod` the Dockerfile replaces it with a link to `lib/app`, which skaffold syncs (`block/ui/docker/Dockerfile`); the Mac's tests link it the same way (`block/mcp/scripts/test.sh`). Without it a change to the package cannot be seen on dev until it is published, which is the order the other way round. Vite does not watch a linked package outside its root: a page kept an old copy of it (`does not provide an export named …`) until a hard reload, so `block/ui/app/vite.config.ts` watches `lib/` and sends its files whole every time.
 - **A new version of the package** is published from `block/lib/app` (`npm publish --access public`, after asking: it cannot be taken back) and each product raises its exact pin. Two traps: the registry answers 404 for a version for a few minutes after it says `+ @ghostmind-dev/block@x.y.z`, so wait for `npm view` before installing; and a consumer moved from a `file:` dependency keeps the link in its lock until `npm uninstall` then `npm install --save-exact`.
 
 ## Tunnel (only if something is public)
@@ -173,14 +201,14 @@ A cloudflared app per project sends each hostname **straight to its app's Servic
 
 Traefik is no longer part of the pattern, and no project has a `traefik/` app any more.
 
-## Terraform (cloud resources: buckets, service accounts)
+## OpenTofu (cloud resources: buckets, service accounts)
 
-No `run terraform`, and nothing to install: Terraform runs in a throwaway `hashicorp/terraform` container through varlock. Reference: `/Volumes/Projects/tags/bucket` (`.env.schema`, `scripts/terraform.sh`, `infra/`).
+**OpenTofu, not Terraform** (owner's direction, 2026-10-18): the open-source fork (MPL, Linux Foundation) of Terraform, which HashiCorp moved to the BSL. Same `.tf` files, same providers, same state: a project on Terraform switches by changing the image, then `plan` must show no changes (format's bucket, written by Terraform 1.13, did on dev and prod). No `run terraform`, and nothing to install: it runs in a throwaway `ghcr.io/opentofu/opentofu:<version>` container through varlock (pin an exact version). Reference: `/Volumes/Projects/format/bucket` (`.env.schema`, `scripts/tofu.sh`, `infra/main.tf`).
 
-- **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")`, the `TF_VAR_*` inputs, and `TF_STATE_PREFIX` built with `concat()`.
-- **`scripts/terraform.sh <dev|prod> [args]`** re-executes itself through `varlock run` with `APP_ENV` set (routines have no shell to set it), then runs `docker run --rm -v "$PWD/infra:/infra" -w /infra -e GOOGLE_CREDENTIALS -e TF_VAR_… hashicorp/terraform:1.13`: `init -reconfigure -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`).
+- **Schema**: `GOOGLE_CREDENTIALS=vaultSecret("ghostmind/global/gcp#GCP_SERVICE_ACCOUNT_JSON")`, `TERRAFORM_BUCKET_NAME=vaultSecret("ghostmind/global/gcp")` (the state bucket, shared with what Terraform wrote), the `TF_VAR_*` inputs (OpenTofu reads the same names) and `TF_STATE_PREFIX` built with `concat()`.
+- **`scripts/tofu.sh <dev|prod> [args]`** re-executes itself through `varlock run --include-internal` with `APP_ENV` set (routines have no shell to set it; `--include-internal` hands the child `VAULT_TOKEN`). It sends `infra/` into the container on stdin and runs `tofu init -backend-config=bucket=… -backend-config=prefix=$TF_STATE_PREFIX`, then the given command (default `plan`), in that one container: a mounted folder is empty when the Docker engine is another machine (`new-app` → kubernetes.md, *Dev machines*).
+- **A key never goes to disk.** After `apply`, the script pipes the outputs (`tofu output -json`) into `vault kv put <path> -`; the apps' schemas read it from there. `resource "local_file"` with a key is a `check.sh` FAIL.
 - **Existing state from the `run` era** lives at `<meta.id>/<legacy env>/terraform/<component>` in `$TERRAFORM_BUCKET_NAME`, with `local` as the dev env name. Keep that prefix (`concat("<meta.id>/", $TF_VAR_ENVIRONMENT, "/terraform/core")` with `TF_VAR_ENVIRONMENT=if(forEnv(prod), "prod", "local")`) and `plan` must show no changes before anything else.
-- **Flag resources that write keys to disk** (`local_file` with a service-account key). Prefer putting the key in Vault.
 
 ## Database
 
@@ -201,3 +229,16 @@ relay still has a way for an app of ours to act for a person (`TRUSTED_APPS`, `r
 ## Worker / internal service
 
 Reference: `/Volumes/Projects/potion/worker` (`k8s/worker.yaml`). A Deployment and a Service like any app, with no route in the tunnel: sibling apps reach it at `http://<project>-worker:<port>`. Set its memory limit from what it really uses, and keep the prod manifest's hardening (read-only root filesystem, no capabilities) when it processes untrusted input.
+
+## Colours: the app's own theme, reproduced from Potion
+
+Each app owns its colours. Nothing is shared at run time: no theme package, no shared tokens. (`@ghostmind-dev/colors` tried that across six apps and was removed on 2026-10-17. Keeping one package, its Swift copy and a bridge in every app in step cost more than reproducing a system per app.) Build the theme system **before the first screen**, by reading Potion's and reproducing it, adapted to the app:
+
+- **One token file** holds every colour: the themes, a light and a dark side at least.
+- **Components name roles**, never colours: CSS variables (`var(--c-<role>)`) or Tailwind classes mapped to them on the web, one theme object the screens read on iOS. A new look is then an edit of the token file, not of components.
+- **A before-paint script** in the page `<head>` sets the theme from the saved choice or `prefers-color-scheme`, so nothing flashes.
+- **Contrast checked** in a test: each text role against the background it sits on.
+
+References:
+- Web: `/Volumes/Projects/potion/ui/app/src/theme`.
+- iOS: `/Volumes/Projects/potion/native/app/theme`. Reanimated rejects `rgb(r g b / a)` with "Invalid color value"; give it hex or `rgba(r, g, b, a)` only.

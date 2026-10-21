@@ -21,7 +21,7 @@ say() { # level rule path message
 has() { grep -Eq -- "$1" "$2" 2>/dev/null; }
 
 # ---------- root layout ----------
-ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|k8s|scripts|shared|\.dockerignore|\.history|node_modules)$'
+ALLOWED_ROOT='^(README\.md|Readme\.md|CLAUDE\.md|AGENTS\.md|meta\.json|\.gitignore|\.github|\.claude-plugin|\.claude|\.vscode|\.git|\.DS_Store|\.mcp\.json|plugin|k8s|shared|\.dockerignore|\.history|node_modules)$'
 is_service() { [ -d "$1" ] && { [ -f "$1/meta.json" ] || [ -d "$1/docker" ] || [ -f "$1/.env.schema" ] || [ -d "$1/app" ]; }; }
 SERVICES=()
 for p in "$ROOT"/* "$ROOT"/.[!.]*; do
@@ -29,7 +29,7 @@ for p in "$ROOT"/* "$ROOT"/.[!.]*; do
   n=$(basename "$p")
   if is_service "$p"; then SERVICES+=("$p"); continue; fi
   echo "$n" | grep -Eq "$ALLOWED_ROOT" && continue
-  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/, k8s/, scripts/, shared/ with its .dockerignore, and service folders)"
+  say WARN root "$p" "not allowed at the root (only README, CLAUDE.md, meta.json, .gitignore, .github, .claude-plugin, plugin/, k8s/, shared/ with its .dockerignore, and service folders)"
 done
 [ ${#SERVICES[@]} -eq 0 ] && is_service "$ROOT" && SERVICES=("$ROOT")   # a single-service folder passed directly
 
@@ -60,6 +60,9 @@ for S in "${SERVICES[@]}"; do
     has 'enum\([^)]*\blocal\b' "$SCHEMA" && say FAIL schema "$SCHEMA" "APP_ENV must be dev/prod, never 'local' (varlock always loads .env.local)"
     has 'remap\(' "$SCHEMA" && say WARN schema "$SCHEMA" "remap() returns the env name, not the value: use if(forEnv(prod), …)"
     has 'ghostmind/projects/' "$SCHEMA" && say FAIL schema "$SCHEMA" "Vault path is ghostmind/project/ (singular)"
+    # varlock reads every "# @word" as a decorator, comments included, and refuses the whole file for one it does not know
+    BADAT=$(grep -nE '^[[:space:]]*#[[:space:]]*@[A-Za-z0-9_]*[^A-Za-z0-9_=( ]' "$SCHEMA" | head -1 | cut -d: -f1)
+    [ -n "$BADAT" ] && say FAIL schema "$SCHEMA:$BADAT" "a comment line starts with @ and a name varlock can't read as a decorator: it refuses the whole schema. Write the name inside the sentence (secrets skill)"
     grep -En '\.ts\.net' "$SCHEMA" 2>/dev/null | grep -Ev '^[0-9]+:\s*(#|VAULT_ADDR)' | grep -Eq . && \
       say WARN runtime-net "$SCHEMA" "a value points at a Tailscale name: between Hetzner servers running prod calls use the private network (10.0.0.x); fine if it's dev-only or a deliberate cross-provider link"
   fi
@@ -125,7 +128,12 @@ for S in "${SERVICES[@]}"; do
   K="$S/k8s"; N=$(basename "$S")
   if [ -d "$K" ]; then
     PRODM=$(ls "$K"/*.yaml 2>/dev/null | grep -v '\.dev\.yaml$' | head -1)
-    [ -n "$PRODM" ] || say FAIL k8s "$K" "no prod manifest (k8s/<app>.yaml)"
+    DEVONLY=""; [ -f "$S/meta.json" ] && grep -Eq '"dev-only"' "$S/meta.json" && DEVONLY=1
+    if [ -n "$DEVONLY" ]; then
+      [ -n "$PRODM" ] && say WARN k8s "$PRODM" "the app is tagged dev-only but has a prod manifest: drop the tag or the manifest"
+    else
+      [ -n "$PRODM" ] || say FAIL k8s "$K" "no prod manifest (k8s/<app>.yaml); an app the user wants dev only carries the tag \"dev-only\" in its meta.json (system rule 9)"
+    fi
     [ -n "$PRODM" ] && ! has 'image:\s*IMAGE\s*$' "$PRODM" && say FAIL k8s "$PRODM" "prod manifest must use 'image: IMAGE' (CI replaces it with the built digest)"
     if [ -n "$PRODM" ] && [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA"; then
       has 'VAULT_JWT_ROLE' "$PRODM" || say FAIL k8s "$PRODM" "the app reads Vault but the Deployment sets no VAULT_JWT_ROLE (login by service account)"
@@ -139,11 +147,12 @@ for S in "${SERVICES[@]}"; do
       SK="$S/skaffold.yaml"
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
-        has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; the routines use the current kube context through scripts/skaffold.sh, which derives the Docker context"
-        # a script that names a cluster is the same pin, one file away (scripts/skaffold.sh with DOCKER_HOST=ssh://m1, kubectl --context m1)
+        has '^\s*kubeContext:' "$SK" && say FAIL skaffold "$SK" "remove deploy.kubeContext: no file names a cluster; skaffold dev uses the current kube context (paired with the Docker context on the same machine)"
+        # a script that names a cluster is the same pin, one file away (DOCKER_HOST=ssh://<machine>, kubectl --context <machine>):
+        # any context but the prod one, which scripts that touch prod always name
         for SH in "$S"/scripts/*.sh; do
-          [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -Eq 'DOCKER_HOST=ssh://|--(kube-)?context[ =](m1|m3|orbstack)\b' && \
-            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; switch the kube context and let scripts/skaffold.sh derive the Docker one (new-app kubernetes.md, Dev machines)"
+          [ -f "$SH" ] && grep -Ev '^\s*#' "$SH" | grep -E 'DOCKER_HOST=ssh://|--(kube-)?context[ =][A-Za-z0-9_$-]' | grep -Evq -- '--(kube-)?context[ =](ghostmind|"?\$)' && \
+            say WARN skaffold "$SH" "a script names a dev cluster: no file names one; use the current kube and Docker contexts as they are (new-app kubernetes.md, Dev machines)"
         done
         has '^\s*sync:' "$SK" || say WARN skaffold "$SK" "no file sync: hot reload is required (sync: infer on the source folders), unless the app has no dev server"
         has 'push:\s*false' "$SK" || say WARN skaffold "$SK" "set build.local.push: false (the cluster on the Docker host uses the image directly)"
@@ -152,8 +161,7 @@ for S in "${SERVICES[@]}"; do
       DI="$S/.dockerignore"; [ -f "$SK" ] && has 'context:\s*\.\.' "$SK" && DI="$ROOT/.dockerignore"
       # only an image that installs dependencies needs one (not cloudflared or Hasura)
       [ ! -f "$S/app/package.json" ] || { [ -f "$DI" ] && has 'node_modules' "$DI"; } || say FAIL docker "$S" "no .dockerignore excluding node_modules/.next/dist (at the repo root for an app that builds from it): the Mac's node_modules would hide the image's own"
-      [ -f "$M" ] && ! has '"dev"\s*:\s*"bash \.\./scripts/skaffold\.sh dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"bash ../scripts/skaffold.sh dev --no-prune\": called directly, skaffold builds on whatever Docker context is current, which drifts from the kube context (new-app kubernetes.md, Dev machines)"
-      SKAFFOLD_APPS=1
+      [ -f "$M" ] && ! has '"dev"\s*:\s*"skaffold dev' "$M" && say WARN routine "$M" "the dev routine of a Kubernetes app is \"skaffold dev\""
       ls "$K"/*.dev.yaml | while read -r dm; do
         grep -Eq '^kind:\s*(Namespace|PersistentVolumeClaim)' "$dm" && say WARN k8s "$dm" "shared things (namespace, volumes) belong in a pre-deploy hook, not in one app's dev manifest"
       done
@@ -215,9 +223,6 @@ for S in "${SERVICES[@]}"; do
   fi
 done
 
-[ -n "${SKAFFOLD_APPS:-}" ] && [ ! -f "$ROOT/scripts/skaffold.sh" ] && \
-  say WARN skaffold "$ROOT" "no scripts/skaffold.sh: the routines need it to build on the Docker of the selected cluster (copy /Volumes/Projects/tags/scripts/skaffold.sh)"
-
 # ---------- herdr: the root claude pane, the mobile tab ----------
 RM="$ROOT/meta.json"
 if [ -f "$RM" ]; then
@@ -258,6 +263,34 @@ for S in "${SERVICES[@]}"; do
         say WARN metro "$S" "Metro port $APP is also $(basename "$o")'s: two apps in dev on one port load each other's code (take a free one, system port registry)"
     done
   done
+done
+
+# ---------- AI models are read live ----------
+# A source file naming three or more OpenRouter chat models is a hand-kept list, and it ages (voice models aside).
+MODEL_ID="['\"](anthropic|openai|google|x-ai|deepseek|qwen|z-ai|moonshotai|mistralai|minimax|meta-llama)/[a-z0-9.-]+['\"]"
+for S in $(printf '%s\n' "${SERVICES[@]}" "$ROOT/shared" "$ROOT/lib" | sort -u); do
+  [ -d "$S" ] || continue
+  grep -rlE "$MODEL_ID" "$S" --include='*.ts' --include='*.tsx' --include='*.js' --include='*.mjs' --include='*.py' \
+    --exclude-dir=node_modules --exclude-dir=.next --exclude-dir=dist --exclude-dir=build --exclude-dir=test --exclude-dir=tests 2>/dev/null |
+  while read -r f; do
+    [ "$(grep -oE "$MODEL_ID" "$f" | grep -viE 'tts|voice|speech|image|embed' | sort -u | wc -l)" -ge 3 ] && \
+      say WARN ai-models "$f" "a hand-kept list of AI models: read them live from OpenRouter's /api/v1/models, default to a ~maker/family-latest alias (new-app references/openrouter.md)"
+  done
+done
+
+# ---------- a key written to disk by Terraform ----------
+# A service-account key that Terraform writes to a file (resource "local_file") is a secret on disk, even gitignored.
+# The key goes from Terraform's outputs straight into Vault instead.
+grep -rlE 'resource "local_(sensitive_)?file"' --include='*.tf' --exclude-dir=.terraform --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
+while read -r f; do
+  grep -qE 'private_key|key_json|credentials' "$f" && \
+    say FAIL secrets "$f" "Terraform writes a key to a file: a secret on disk. Send it from the outputs into Vault instead (system: OpenTofu row; reference /Volumes/Projects/format/bucket/scripts/tofu.sh)"
+done
+
+# ---------- OpenTofu, not HashiCorp's Terraform ----------
+grep -rlE 'hashicorp/terraform[:@ ]|(^|[ ;|&])terraform (init|plan|apply)' --include='*.sh' --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
+while read -r f; do
+  say WARN tofu "$f" "runs HashiCorp's Terraform: use OpenTofu (ghcr.io/opentofu/opentofu:<version>, same .tf files and state; new-app blocks.md, OpenTofu)"
 done
 
 # ---------- port collisions across projects ----------

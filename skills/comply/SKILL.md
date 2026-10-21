@@ -40,7 +40,7 @@ Bring one project in line with the system as it is **today**. The `system` skill
    - Vault policies list exactly the paths the schemas read (`vault policy read <project>-<app>`, read-only);
    - reference apps: is there a newer, better pattern in the `system` table this project should follow?
    - a remote MCP on the cluster survives its pod: delete the serving pod mid-session and call a tool again without reconnecting (the tunnel pins a connection to one pod, so load alone proves nothing);
-   - does each app still start in dev (`run routine dev`: `skaffold dev` through `scripts/skaffold.sh`, on the current kube context with the Docker of the same machine) and hot-reload an edit? Re-run it after any Docker, manifest or schema change.
+   - does each app still start in dev (`run routine dev`: `skaffold dev` on the current kube context, with the Docker context on the same machine) and hot-reload an edit? Re-run it after any Docker, manifest or schema change.
 5. **Re-run the audit** until it reports `0 failing check(s)`. Each remaining `WARN` is fixed or explained. *Done when the audit is at zero failures and every remaining warning has a stated reason.*
 6. **Report**: failures before → after, what changed (by file), what needs the user (shared infra, prod changes awaiting a yes, legacy apps to migrate). Don't commit or push unless the user asks.
 

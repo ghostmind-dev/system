@@ -128,3 +128,7 @@ Rules:
 - Check prod from the Mac: `APP_ENV=prod VAULT_JWT_ROLE= varlock load --agent` in the app folder (your own token; the empty role skips the pod-only login).
 - **Compare values by hash, never by printing them.** `varlock run` redacts the child's stdout, so hash inside the child: `varlock run -- bash -c 'printf %s "$KEY" | shasum | cut -c1-8'`. For Vault: `vault kv get -field=KEY <path> | shasum | cut -c1-8`.
 - The Vault plugin has a fixed 10 s timeout and no retry. Intermittent timeouts under heavy local load are the plugin, not Vault; re-run.
+
+## A comment line never starts with `@`
+
+varlock reads every `# @word` as a decorator, comments included, and refuses the whole schema when the word is not one: `"@ghostmind-dev/colors" is not a valid decorator name - only letters, numbers, and underscores are allowed`. Every value then fails (`Vault URL is required`) and the pod crash-loops. Write the name inside the sentence instead (`# The colors package (@ghostmind-dev/colors) …`). `comply` fails a schema with such a line.

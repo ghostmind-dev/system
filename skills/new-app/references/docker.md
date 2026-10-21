@@ -30,6 +30,8 @@ WORKDIR /usr/app/app
 COPY app .
 ARG APP_ENV=dev
 RUN if [ "$APP_ENV" = "prod" ]; then npm run build; fi
+# The build runs without varlock: a page Next prerenders here sees none of the schema's values, so a value
+# such a page reads must default to its production value (`!== 'off'` rather than `=== 'on'`).
 
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
@@ -174,9 +176,9 @@ export TAILSCALE_IP=$(tailscale ip -4)        # only if the Mac reaches this por
   "name": "<app>",
   "type": "app",
   "routines": {
-    "dev": "bash ../scripts/skaffold.sh dev --no-prune",
-    "dev_keep": "bash ../scripts/skaffold.sh dev --no-prune --cleanup=false",
-    "delete": "bash ../scripts/skaffold.sh delete"
+    "dev": "skaffold dev --no-prune",
+    "dev_keep": "skaffold dev --no-prune --cleanup=false",
+    "delete": "skaffold delete"
   },
   "herdr": { "workspaces": [ { "label": "<project>", "tabs": [ {
     "label": "<app>", "prefix": false, "layout": "compact",
