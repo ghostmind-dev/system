@@ -4,7 +4,7 @@ description: >-
   The Ghostmind development system: how every project is built, configured, secured and deployed.
   Load first for any work on a Ghostmind project — creating an app, adding a service (web, remote MCP,
   worker, DB, tunnel), secrets or env vars, Docker, Kubernetes (k3s, Skaffold), Compose, deploys,
-  servers, meta.json, routines, herdr, or the `run` CLI. Routes to the new-app, secrets, deploy, database, migrate and comply skills.
+  servers, meta.json, routines, herdr, or the `run` CLI. Routes to the kickoff, new-app, secrets, deploy, database, migrate and comply skills.
 ---
 
 # Ghostmind System
@@ -19,7 +19,7 @@ The system is **a few plain tools plus reference apps**. There is no framework t
 
 **Compose stays in the toolbox** for targets that aren't the cluster: Cloud Run (build and run locally with Compose, deploy with the provider's CLI), a one-off container, a script project. It is the exception: no product holds a compose file any more (the Compose hosts are Vault's own server and the house's Zigbee bridge on a Raspberry Pi, both outside the cluster). Start from Kubernetes, and reach for Compose only when the target can't be the cluster.
 
-Creating something new → `new-app`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user asks for a debrief (`/system:debrief`, or in their own words: "update the system with what you learned"): what it taught goes back into these skills and into the `toolkits` skills.
+Creating something new → `new-app`; setting up only its folder and herdr workspace and moving the work to a Claude session there → `kickoff`. A Postgres DB → `database`. Converting an app still on `.env.base` / `run vault` → `migrate`. Checking a project against these rules and fixing drift → `comply`. When a piece of work is done, the user asks for a debrief (`/system:debrief`, or in their own words: "update the system with what you learned"): what it taught goes back into these skills and into the `toolkits` skills.
 
 ## Rules every project follows
 
@@ -134,6 +134,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
 | Bring-your-own OpenRouter | Users pay for their own AI | `/Volumes/Projects/potion` (`agent/ai-connection.ts`: PKCE, key AES-GCM in `ai_connections`; `shared/server/ai-models.ts`: models read live, a gone model refused). Guide: `new-app` → references/openrouter.md |
+| **An assistant in the app** | A chat that understands the product and acts in it with the person's yes | `/Volumes/Projects/relay` (`api/app/src/assistant/`: `@ghostmind-dev/agento` on the person's key, Jev as decider, the product's own MCP as its tools, `/chat` as a page). `new-app` → blocks.md → *An assistant in the app* |
 | **Payments** (billing) | The product sells a plan | `/Volumes/Projects/billing` (its README: the contract); the product's side: `/Volumes/Projects/tags/shared/server/billing.ts`. One Stripe account, one webhook and one customer per person for every product; the product holds a billing token and no Stripe key. `new-app` → blocks.md → *Payments: billing* |
 | OpenTofu (not Terraform) | Cloud resources (GCS bucket + service account) | `/Volumes/Projects/format/bucket` (OpenTofu, the open-source Terraform, in a container through varlock; the files go in on stdin, so it works when the Docker engine is another machine; the service account's key goes from Terraform's outputs straight into Vault, never to a file). Don't copy `tags/bucket`: it runs HashiCorp's Terraform and writes the key to `infra/service-account-key.json` (`check.sh` fails it) |
 | Database | The product has state | `/Volumes/Projects/tags/db` (Hasura on the cluster, migrations applied in the container) |
@@ -199,12 +200,12 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | Project | Ports |
 |---|---|
 | portal | ui 5096 |
-| tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 |
+| tags | city 5085 · db 5086 · mcp 3085 · native 3086 · Hasura console 9725 / api 9723 · atlas 5087 / 5088, its console 9755 / api 9753 · iOS: Metro 8085 |
 | format | db 5075 · ui 5076 · mcp 3075 · Hasura console 9705 / api 9703 · iOS: Metro 8086, pretend backend 5077 |
 | users | state 5090 (dev forward; the Service is 5080 in prod, consumers hardcode it) · Hasura console 9727 / 9728 |
-| potion | ui 5001 · mcp 3020 · chrome 3025 · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 |
+| potion | ui 5001 · mcp 3020 · chrome 3025 (its extension's hot reload 8082) · worker 3030 · api 3040 · native 3055 · db 5080 · Hasura console 9693 / 9695 · iOS: Metro 8081 |
 | noice | ui 5065 · db 5066 · engine 5068 · Hasura console 9735 / api 9733 · iOS: Metro 8083, pretend backend 5069 |
-| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 · iOS: Metro 8081 |
+| relay | api 5055 · db 5056 · mcp 3065 · Hasura console 9745 / api 9743 · iOS: Metro 8084 |
 | db | postgres 5432 |
 | admin | dashboard 5095 |
 | magneto | api 3035 · db 5035 · ui 5036 |
@@ -214,7 +215,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
 | vault | 8200 |
 
-For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports.
+For a new project, pick unused numbers in the usual ranges: 5000–5999 for web and db, 3000–3999 for APIs and MCPs, 9700–9799 for tool ports, 8081–8099 for an iOS app's Metro. `comply`'s check compares every project's Metro port and reports two that are the same.
 
 ## meta.json and `run`
 
@@ -228,7 +229,7 @@ For a new project, pick unused numbers in the usual ranges: 5000–5999 for web 
 - `run herdr init|attach|terminate <workspace>`: builds the herdr workspace from the `herdr` blocks. `init --start` also runs the routine each pane names; `--profile <name>` or `--only <tab/pane,...>` narrows which.
 - `run herdr colors [on|off]`: shows or hides each project's colour mark in herdr's sidebar. Fetch the schema before editing a `herdr` block: `https://raw.githubusercontent.com/ghostmind-dev/run/refs/heads/main/meta/schema.json`.
 
-A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. In the `herdr` block, a workspace may carry a `color` (its mark in herdr's sidebar), and a pane may name the `routine` it usually runs and the `profiles` it is part of. A profile is a set of routines started together for one way of working on a project (`web`, `mobile`), tagged pane by pane across the project's apps.
+A meta.json carries `id` (12-char random), `name`, `type` (`project` at the root, `app` per service), `description`, `tags`, `groups`, `routines`, `herdr`. `tags` describe a project; `groups` name sets of projects worked on together. In the `herdr` block, a workspace may carry a `color` (its mark in herdr's sidebar), and a pane may name the `routine` it usually runs and the `profiles` it is part of. A profile is a set of routines started together for one way of working on a project (`web`, `mobile`), tagged pane by pane across the project's apps. **The root `meta.json` has a `claude` tab whose pane runs the routine `claude` (`"claude": "claude"`) and is in every profile the project's apps name**, so opening any profile starts a Claude session with it; add the new profile there when an app introduces one.
 
 **Removed in run 0.9.0, they no longer exist:** `run custom`, `run vault kv`, `run docker`, `run terraform`, `run tmux`, `run meta`, `run action`, `run misc`, and the meta.json keys `compose`, `docker`, `terraform`, `custom`, `tmux`, `template`, `global`. A project still calling one is converted with the `migrate` skill: its scripts become `scripts/*.sh`.
 

@@ -17,6 +17,7 @@ New apps replicate **reference apps** (portal for how an app is packaged and run
 | Skill | For |
 |---|---|
 | `system` | Overview, rules, naming, building blocks and reference apps. Load first |
+| `kickoff` | Starting a project from a description: folder, `meta.json` files, herdr tabs (Claude first), then the workspace opened and the brief handed to a Claude session there (`/system:kickoff`) |
 | `new-app` | Scaffolding a project or service (web, remote MCP, worker, tunnel, non-web): Kubernetes manifests, Skaffold, the image |
 | `secrets` | `.env.schema`, the Vault layout, adding secrets, debugging variables |
 | `deploy` | Deploying to the cluster through GitHub Actions; the non-default Compose host flow, server hardening, debug sessions |
