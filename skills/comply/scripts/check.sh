@@ -283,6 +283,14 @@ while read -r f; do
     say FAIL secrets "$f" "Terraform writes a key to a file: a secret on disk. Send it from the outputs into Vault instead (system: OpenTofu row; reference /Volumes/Projects/format/bucket/scripts/tofu.sh)"
 done
 
+# ---------- a Mac app updates itself ----------
+# a Swift app that is released as a .dmg carries Sparkle, or each new version is a new download for every person
+for S in "${SERVICES[@]}"; do
+  [ -f "$S/app/Package.swift" ] && [ -f "$S/scripts/release.sh" ] && has '\.dmg' "$S/scripts/release.sh" || continue
+  has 'sparkle-project/Sparkle' "$S/app/Package.swift" || say WARN mac "$S" "released as a .dmg with no in-app updates: add Sparkle as format/mac does (new-app non-web.md, A Mac app)"
+  has 'sparkle-project/Sparkle' "$S/app/Package.swift" && ! has 'sign_update' "$S/scripts/release.sh" && say WARN mac "$S/scripts/release.sh" "Sparkle is in the app but the release signs no update: publish the signed .zip and appcast.xml (format/mac/scripts/release.sh)"
+done
+
 # ---------- OpenTofu, not HashiCorp's Terraform ----------
 grep -rlE 'hashicorp/terraform[:@ ]|(^|[ ;|&])terraform (init|plan|apply)' --include='*.sh' --exclude-dir=.claude --exclude-dir=node_modules "$ROOT" 2>/dev/null |
 while read -r f; do
