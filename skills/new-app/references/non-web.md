@@ -166,20 +166,48 @@ What follows is ours and holds whatever the app is written with. The language's 
   key notarises a Mac app and uploads an iOS one. The certificate itself lives in the person's keychain; the
   script looks for it and says, in one sentence, what is missing and who makes it.
 - **Downloads are in one public bucket for every product**: Cloudflare R2 `ghostmind-downloads`, served at
-  `https://downloads.ghostmind.dev/<project>/`. A release puts three things there: `<Name>-<version>.dmg`
+  `https://downloads.ghostmind.dev/<project>/`. A release puts five things there: `<Name>-<version>.dmg`
   (cached for a year, never overwritten), `<Name>.dmg` (always the latest, not cached, saved by browsers under
-  the versioned name) and `latest.json` (version, build, date, file name), uploaded last. Needs `wrangler login`
+  the versioned name), `<Name>-<version>.zip` (the update, cached for a year), then `appcast.xml` (the update
+  feed) and `latest.json` (version, build, date, file names), uploaded last so nothing points at a missing file. Needs `wrangler login`
   once on the Mac. Reference: `format/mac/scripts/release.sh`, `relay/mac/scripts/release.sh`.
 - **The website reads `latest.json` through the product's own server, or the bucket must know the website.**
   The bucket answers only the origins in its CORS rule. Either add the product's addresses to that rule, or
   have the product's API read the file and say what there is to download (`relay/api/app/src/downloads.js`):
   the second needs no change to shared settings and offers nothing when nothing is published.
+- **Every Mac app we ship updates itself, with Sparkle 2** (the user's direction, 2026-10-22). A person installs
+  the .dmg once; after that the app checks once a day, asks, downloads, replaces itself and opens again. Put it in
+  from the first release: a copy released without it can only be replaced by hand. References:
+  `format/mac` (`Updater.swift`, `scripts/build.sh`, `scripts/release.sh`, the About tab) and `relay/mac` (the
+  same, for an app that contains a program). What it takes:
+  - `Package.swift`: Sparkle at an exact version (`.package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0")`),
+    with `Package.resolved` committed.
+  - `Updater.swift`: an `SPUStandardUpdaterController`, a **Check for Updates…** in the menu bar and in the window,
+    the version, and two switches (check by itself; install without asking).
+  - The build copies `Sparkle.framework` into `Contents/Frameworks`, adds the rpath
+    (`install_name_tool -add_rpath @executable_path/../Frameworks`) and signs inside out: Sparkle's `.xpc`,
+    `Updater.app` and `Autoupdate`, then the framework, then the app (with `--options runtime --timestamp` under
+    the Developer ID). Info.plist: `SUFeedURL`, `SUPublicEDKey`, `SUEnableAutomaticChecks`,
+    `SUScheduledCheckInterval` 86400, `SUAllowsAutomaticUpdates`. The dev build points at `appcast-dev.xml`, which
+    does not exist, with automatic checks off: a trial is rebuilt, never updated.
+  - **One update key per app**, Ed25519 (`generate_keys` from Sparkle's `bin/`). The private half is in Vault,
+    `ghostmind/project/<project>/mac#SPARKLE_ED_KEY`, in `mac/.env.schema` and read only by the release routine;
+    the public half is in the Info.plist template or a committed `mac/sparkle.pub` the build reads. **Never make a
+    new key once a version is out**: every installed copy would refuse every update after it.
+  - The release zips the signed app (`ditto -c -k --keepParent`), signs the zip (`sign_update --ed-key-file`, and
+    `--verify`), writes `appcast.xml` with `sparkle:version` = the build number (it must only grow: a timestamp),
+    `release-notes/<version>.md` as the update window's text, has a `finish` mode for a release that stopped
+    halfway, and commits the version bump by naming its files.
+  - An app that runs a child process (the program it contains) **stops it on `willTerminate`**: Sparkle quits the
+    app to replace it, and a child left running from the old copy keeps its locks, so the new copy finds "another
+    one running".
 - **The release asks which version first** (rule 11), from what is published, and refuses a version that is
   already there. A dry run builds and signs and uploads nothing.
 - **An agent cannot see a Mac window.** Screenshots need a permission an agent's shell does not have. Give the
   app a way to print what its window would list (`<App> --describe`) and check that; say plainly that the
   layout itself was not looked at, and have the person look.
-- **Routines, the same names in every project:** `build` (trial), `open`, `describe`, `package`, `release`, `test`.
+- **Routines, the same names in every project:** `build` (trial), `open`, `describe`, `package`, `release`
+  (`release finish` completes one), `test`.
 
 ## Credential files that tools insist on (`.p8`, service-account JSON)
 
