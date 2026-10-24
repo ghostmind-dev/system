@@ -162,6 +162,13 @@ How it holds together, for when something looks wrong:
 
 ## Html written by a model: the block package
 
+**The block is the centrepiece of how every product lets its parts be customised** (owner, 2026-10-24). A card, a
+note's look, a player, the bubble on a map, a dashboard: any part a person or an AI may reshape is an html block,
+shown through `@ghostmind-dev/block`. Each product wires it its own way (its host, its functions, its storage), but
+stays aligned with the package on what a block is: the sandboxed frame, three inputs (the thing, a row, props),
+any npm library, empty means no room. When a product learns something about blocks that is not its own, it goes
+into block first and the products follow. Potion is where this started and is the fullest example.
+
 When a product shows html that an AI (or a person) wrote, such as a chart in a note, a dashboard, the box under the mouse on a map or a card in a list, it shows it with **`@ghostmind-dev/block`** (npm; source in `/Volumes/Projects/block/lib`, plain ESM JavaScript, no dependency, no build). Potion, tags.city and Relay all do, on the web and in their iOS apps. A product never writes its own frame. Read `/Volumes/Projects/block/README.md` first.
 
 What the package is, and what stays the product's:
@@ -169,7 +176,7 @@ What the package is, and what stays the product's:
 | The package | The product |
 |---|---|
 | The frame: `sandbox="allow-scripts"` and a policy with no network, no storage and no way to the page. It does not loosen | Where blocks are kept (a table, a note's text) |
-| Libraries: a block names a package on its first lines (`<!-- block:use three@0.186 -->`, or the product's own spelling) and gets it as a global | Which libraries, and from where: the package's loader (any npm package, from jsDelivr), or the product's own catalogue behind the same `loadAll` |
+| Libraries: a block names any npm package on its first lines (`<!-- block:use three@0.186 -->`, or the product's own spelling), with `as` for the global and a path for one file (a stylesheet), and gets it as a global | Only where the files come from: the package's loader straight from jsDelivr, or the loader's `fetch` routed through the product's server so each version is kept for good (Potion's vendor route keeps every capture in its bucket). **A product never refuses a library by name** (owner, 2026-10-24): it runs in the reader's sandboxed frame and choosing it is the author's call. A catalogue is knowledge (the file, the global, sandbox notes, a tested example), never a gate; Potion kept one as an allowlist until that day and a note naming vis-timeline showed an error instead of a timeline |
 | Slots: `defineSlot` declares a place and its room; `mount` keeps a block inside it; `slotText` says the same numbers to the model | Which slots exist and how big each is |
 | The bridge: `defineHost({ name, calls, watches, events, client })` makes `window.<name>` in the block; `serve` answers each call with the product's own function | Every function, with the product's own permissions: what a block may read and change, and asking the person before a write. The package knows none of them |
 
