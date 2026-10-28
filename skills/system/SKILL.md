@@ -212,6 +212,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
 | block | demo 5105 · ui 5106 (the one dev host: it sends /mcp, /oauth and /api to the mcp) · db 5107 · mcp 3105 · Hasura console 9775 / api 9773 |
 | colors | ui 5125 (dev only) |
+| home (playground) | ui 5135 (tailnet only: home-ui-m1) |
 | billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
 | vault | 8200 |
 
