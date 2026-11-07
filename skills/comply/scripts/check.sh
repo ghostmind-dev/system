@@ -137,13 +137,16 @@ for S in "${SERVICES[@]}"; do
     [ -n "$PRODM" ] && ! has 'image:\s*IMAGE\s*$' "$PRODM" && say FAIL k8s "$PRODM" "prod manifest must use 'image: IMAGE' (CI replaces it with the built digest)"
     if [ -n "$PRODM" ] && [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA"; then
       has 'VAULT_JWT_ROLE' "$PRODM" || say FAIL k8s "$PRODM" "the app reads Vault but the Deployment sets no VAULT_JWT_ROLE (login by service account)"
-      has 'jwtAuthPath=k8s' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=k8s/oidcToken to @initHcpVault and the VAULT_JWT line (secrets skill)"
+      has 'jwtAuthPath=\$VAULT_JWT_PATH' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=\$VAULT_JWT_PATH/oidcToken to @initHcpVault and the VAULT_JWT and VAULT_JWT_PATH=k8s lines (secrets skill)"
       has 'ts\.net' "$PRODM" && say WARN k8s "$PRODM" "prod VAULT_ADDR should be Vault's private address (http://10.0.0.7:8200)"
     fi
     [ -f "$D/entrypoint.sh" ] && has 'while true' "$D/entrypoint.sh" && \
       say WARN k8s "$D/entrypoint.sh" "prod restart loop: that is for a Compose host's single-use login. On the cluster exec the app and let Kubernetes restart the pod (new-app docker.md)"
     [ -n "$PRODM" ] && has 'VAULT_TOKEN|secretKeyRef' "$PRODM" && say FAIL k8s "$PRODM" "no token or secret handed to a prod pod: it logs in to Vault with its service account"
     if ls "$K"/*.dev.yaml >/dev/null 2>&1; then
+      for DM in "$K"/*.dev.yaml; do
+        has 'vault-dev|name: VAULT_TOKEN' "$DM" && say FAIL k8s "$DM" "a dev pod logs in to Vault itself: VAULT_JWT_PATH=k8s-dev, VAULT_JWT_ROLE=dev and the projected token, no vault-dev token (new-app kubernetes.md)"
+      done
       SK="$S/skaffold.yaml"
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else

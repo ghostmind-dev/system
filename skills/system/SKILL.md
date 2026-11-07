@@ -124,7 +124,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 |---|---|---|
 | **Kubernetes app, dev and prod** | The default for a new app | `/Volumes/Projects/portal` (`portal/` = ui, `tunnel/`): `k8s/<app>.yaml` + `<app>.dev.yaml`, `skaffold.yaml` per app with hot reload, no Compose. Details: `new-app` → kubernetes.md |
 | **Prod deploy to the cluster** | Every app on k3s | `/Volumes/Projects/portal/.github/workflows/` (`_deploy-k8s.yaml`, `deploy.yaml`); also `tags` (five apps) |
-| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/portal/portal/skaffold.yaml` (`sync: infer`), `/Volumes/Projects/tags/k8s/dev-setup.sh` (namespace, volume, dev-session Vault token) and `k8s/remove.sh` |
+| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/portal/portal/skaffold.yaml` (`sync: infer`), `/Volumes/Projects/tags/k8s/dev-setup.sh` (namespace, volume; dev pods log in to Vault themselves at `auth/k8s-dev`) and `k8s/remove.sh` |
 | **Vault login by service account** | A pod that reads secrets | `/Volumes/Projects/tags/city/k8s/city.yaml` + `.env.schema`; `portal/tunnel` |
 | **Tunnel without Traefik** | Something must be public | `/Volumes/Projects/portal/tunnel`, `/Volumes/Projects/tags/tunnel` |
 | Cluster and node setup | Adding a node or a project to the cluster | `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` |
