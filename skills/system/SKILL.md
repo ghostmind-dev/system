@@ -71,7 +71,7 @@ Creating something new → `new-app`; setting up only its folder and herdr works
     meta.json                    routines dev, dev_keep, delete (skaffold) + herdr tab for this app
   k8s/                           the project's scripts: dev-setup.sh (pre-deploy hook shared by the apps), remove.sh, prod-init.sh (one-time prod setup, `deploy` skill)
   shared/                        only when several backends share TypeScript; the apps then build from the root
-  plugin/                        the product's plugin, for Claude Code (.claude-plugin/plugin.json, .mcp.json) and Agent Plugins 1.0 (plugin.json, mcp.json), shared skills/ (see new-app → blocks.md)
+  plugin/                        the product's Claude plugin: .mcp.json + skills (see new-app → blocks.md)
 ```
 
 **The root holds only `README.md`, `CLAUDE.md`, `meta.json`, `.gitignore`, `.github/`, `k8s/` (the project's dev scripts), `shared/` with a root `.dockerignore` when backends share code, and, when the product ships a Claude plugin, `plugin/` and `.claude-plugin/marketplace.json`.** Every app, including non-web ones (a Swift app, a CLI), lives in its own service folder. Nothing app-specific (`package.json`, `src/`, `test/`) stays at the root.
@@ -129,7 +129,7 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 | **Tunnel without Traefik** | Something must be public | `/Volumes/Projects/portal/tunnel`, `/Volumes/Projects/tags/tunnel` |
 | Cluster and node setup | Adding a node or a project to the cluster | `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` |
 | Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/format/mcp` (Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) for the OAuth; `/Volumes/Projects/potion/mcp` (`app/src/main.ts`) for the transport: **stateless on the cluster**, MCP SDK v2, no sessions (`new-app` → blocks.md) |
-| **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`; `plugin.json` + `mcp.json` ship the same plugin for Agent Plugins 1.0); smaller: `/Volumes/Projects/tags/plugin` |
+| **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`); smaller: `/Volumes/Projects/tags/plugin` |
 | Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/format/ui` (static React + TanStack, Vite) |
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
