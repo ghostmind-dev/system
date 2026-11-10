@@ -49,54 +49,21 @@ A single-host Compose deploy runs one container and isn't bound by this rule; an
 
 The remote MCP gives Claude the app's **actions**; a skill gives it the app's **concepts**: what the entities are, which tool to reach for, and the traps. Ship both together as one Claude plugin in the product repo, so installing the plugin is all a user does. Reference: `/Volumes/Projects/potion/plugin`.
 
-**One `plugin/` folder ships for two platforms** (owner, 2026-11-10): Claude Code, and [Agent Plugins 1.0](https://agent-plugins.org) (Hermes Agent and other v1 clients install these). Each has its own manifest and MCP file side by side; `skills/` is shared as is (Agent Skills format: each folder's name is its `SKILL.md`'s `name`); `commands/` is Claude-only and v1 clients ignore it.
-
 ```
 <project>/
   .claude-plugin/marketplace.json     { "plugins": [ { "name": "<app>", "source": "./plugin" } ] }
   plugin/
-    .claude-plugin/plugin.json        Claude Code: name, description, version, author
-    .mcp.json                         Claude Code: { "mcpServers": { "<app>": { "type": "http", "url": "https://<app>.ghostmind.dev/mcp" } } }
-    plugin.json                       Agent Plugins 1.0 manifest (below)
-    mcp.json                          Agent Plugins 1.0 MCP (below)
-    skills/<app>/SKILL.md             shared: the app's model, tool map, traps
-    commands/                         Claude-only, optional
+    .claude-plugin/plugin.json        name, description, version
+    .mcp.json                         { "mcpServers": { "<app>": { "type": "http", "url": "https://<app>.ghostmind.dev/mcp" } } }
+    skills/<app>/SKILL.md             the app's model, tool map, traps
 ```
-
-`plugin/plugin.json`, with only these top-level fields allowed: `$schema`, `name`, `version`, `description`, `author` (`name`, `email`, `url`), `homepage`, `repository`, `license`, `keywords`, `extensions`:
-
-```json
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "<app>",
-  "version": "<the same as .claude-plugin/plugin.json>",
-  "description": "…",
-  "author": { "name": "ghostmind-dev" },
-  "homepage": "https://<app>.ghostmind.dev",
-  "repository": "https://github.com/ghostmind-app/<project>",
-  "keywords": ["…"]
-}
-```
-
-`plugin/mcp.json`, the same servers as `.mcp.json` with `"type": "http"` written `"streamable-http"`; a remote server allows only `type`, `url` and `headers`:
-
-```json
-{
-  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-  "mcpServers": { "<app>": { "type": "streamable-http", "url": "https://<app>.ghostmind.dev/mcp" } }
-}
-```
-
-- **Both `$schema` fields are required**, and `name` is lowercase `a-z0-9.-`. Validate against the official schemas (`https://agent-plugins.org/schemas/1.0.0/{plugin,mcp}.schema.json`, e.g. with ajv) when you write or change them.
-- **The two manifests carry the same `version`, and the two MCP files the same url and headers.** `toolkits:bump` writes the version into both; there is no per-repo sync script. Comply's audit flags a drift.
-- **The `.gitignore` must let `plugin/mcp.json` through.** A `**/mcp.json` ignore with only `!plugin/.mcp.json` silently leaves it out of git: add `!plugin/mcp.json` too.
 
 - **Design the MCP for an agent, not as a REST mirror.** Tools named for what the user wants done (`add_dictionary`, `try_dictation`), returns that say what happened and what to do next, and refusals that explain themselves. Look at potion's and format's tool sets.
 - **The skill caches what the tools can't say**: how the entities relate, which of two similar tools to use, what users mean by their words (potion: "sidebar" means Quick Access), and the mistakes an agent would otherwise make. It stays short; `writing-for-agents` has the craft.
 - **One source of truth per fact.** Tool behaviour lives in the tool descriptions; the skill points to tools and adds only the knowledge around them.
 - **Let the plugin's user pin a workspace.** When the product has workspaces (`system` → *Workspaces*), the MCP reads a `workspace` header (the workspace's name) and falls back to the person's default, so a project's own `.mcp.json` can add `"headers": { "workspace": "<name>" }` and every call from that project lands in the right place. Reference: `/Volumes/Projects/potion/mcp` and its `shared/server/workspace-resolver.ts`.
-- **Keep them in step.** A new or renamed MCP tool updates the skill in the same change, and bumps the version (`toolkits:bump`, which writes both manifests) so installed copies refresh.
-- **Dev and prod.** The published `.mcp.json` and `mcp.json` point to prod. To try unreleased tools, add the dev URL (`https://<app>.ghostmind.app/mcp`) as a separate MCP in your own Claude config; never ship it.
+- **Keep them in step.** A new or renamed MCP tool updates the skill in the same change, and bumps `plugin.json`'s `version` so installed copies refresh.
+- **Dev and prod.** The published `.mcp.json` points to prod. To try unreleased tools, add the dev URL (`https://<app>.ghostmind.app/mcp`) as a separate MCP in your own Claude config; never ship it.
 
 ## Letting a person make layouts: block is the model
 

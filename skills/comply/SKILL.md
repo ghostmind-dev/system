@@ -32,7 +32,7 @@ Bring one project in line with the system as it is **today**. The `system` skill
    | `workflow` | the reusable `_deploy-k8s.yaml` + one `deploy.yaml` (Compose hosts: `_deploy.yaml` + per-app callers) | `deploy` |
    | `runtime-net` | between Hetzner servers, running prod calls use the private address (10.0.0.x); Tailscale only for a deliberate cross-provider link | `system` rule 8 |
    | `mcp-state` | an MCP on the cluster is stateless: SDK v2 (`@modelcontextprotocol/server` + `/node`), no `transports`/session map, `replicas: 2` in the dev manifest. Start with `npx @modelcontextprotocol/codemod@latest v1-to-v2 .`, then follow potion's `mcp/app/src/main.ts` | `new-app` → blocks.md |
-   | `plugin` | add `plugin/` (`.mcp.json` + skill); add the Agent Plugins 1.0 `plugin.json` and `mcp.json` beside the Claude ones, with the same version, url and headers; `!plugin/mcp.json` in `.gitignore` | `new-app` → blocks.md |
+   | `plugin` | add `plugin/` (`.mcp.json` + skill) | `new-app` → blocks.md |
 
    **Ask first, as one batch, before anything that changes prod** when merged: prod manifests, workflows, compose bindings, ports and Service names other apps call. A shared service's consumers must keep working (`deploy` → *Moving a legacy project*, step 2). **Never** change Vault, the prod cluster, Tailscale, GitHub secrets or another project from this skill: list those for the user.
 4. **Check what the script can't see:**
