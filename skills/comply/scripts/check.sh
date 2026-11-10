@@ -226,6 +226,34 @@ for S in "${SERVICES[@]}"; do
   fi
 done
 
+# ---------- the plugin ships for Claude Code and Agent Plugins 1.0 ----------
+# plugin/.claude-plugin/plugin.json + .mcp.json (Claude Code) and plugin/plugin.json + mcp.json (agent-plugins.org),
+# with the same version, and the same MCP urls and headers (http is written streamable-http). new-app blocks.md.
+P="$ROOT/plugin"
+if [ -f "$P/.claude-plugin/plugin.json" ]; then
+  [ -f "$P/plugin.json" ] || say WARN plugin "$P" "no plugin.json: the plugin ships for Agent Plugins 1.0 too (new-app blocks.md, The product's Claude plugin)"
+  [ -f "$P/.mcp.json" ] && [ ! -f "$P/mcp.json" ] && say WARN plugin "$P" "no mcp.json beside .mcp.json: Agent Plugins 1.0 clients get no MCP (type streamable-http)"
+  if [ -f "$P/plugin.json" ]; then
+    CV=$(jq -r '.version // ""' "$P/.claude-plugin/plugin.json" 2>/dev/null); AV=$(jq -r '.version // ""' "$P/plugin.json" 2>/dev/null)
+    [ "$CV" != "$AV" ] && say FAIL plugin "$P/plugin.json" "version \"$AV\" differs from .claude-plugin/plugin.json's \"$CV\" (toolkits:bump writes both)"
+    jq -e '."$schema" == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"' "$P/plugin.json" >/dev/null 2>&1 || \
+      say WARN plugin "$P/plugin.json" "\$schema must be https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+    EXTRA=$(jq -r 'keys - ["$schema","name","version","description","author","homepage","repository","license","keywords","extensions"] | join(", ")' "$P/plugin.json" 2>/dev/null)
+    [ -n "$EXTRA" ] && say FAIL plugin "$P/plugin.json" "fields Agent Plugins 1.0 does not allow: $EXTRA"
+  fi
+  if [ -f "$P/.mcp.json" ] && [ -f "$P/mcp.json" ]; then
+    jq -e '."$schema" == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"' "$P/mcp.json" >/dev/null 2>&1 || \
+      say WARN plugin "$P/mcp.json" "\$schema must be https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    NORM='.mcpServers // {} | with_entries(.value |= {type: (if .type == "http" then "streamable-http" else .type end), url, headers})'
+    CM=$(jq -S "$NORM" "$P/.mcp.json" 2>/dev/null); AM=$(jq -S "$NORM" "$P/mcp.json" 2>/dev/null)
+    [ "$CM" != "$AM" ] && say FAIL plugin "$P/mcp.json" "servers, urls or headers differ from .mcp.json (http there is streamable-http here)"
+  fi
+  # a **/mcp.json ignore with only !plugin/.mcp.json silently leaves plugin/mcp.json out of git
+  if [ -f "$P/mcp.json" ] && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && git -C "$ROOT" check-ignore -q plugin/mcp.json 2>/dev/null; then
+    say FAIL gitignore "$ROOT/.gitignore" "plugin/mcp.json is ignored by git: add !plugin/mcp.json"
+  fi
+fi
+
 # ---------- herdr: Claude is never a routine, the mobile tab ----------
 # run routine starts Claude without a terminal: it falls into --print mode and exits
 for M in "$ROOT/meta.json" $(printf '%s/meta.json\n' "${SERVICES[@]}"); do
