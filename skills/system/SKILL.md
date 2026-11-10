@@ -71,7 +71,7 @@ Creating something new → `new-app`; setting up only its folder and herdr works
     meta.json                    routines dev, dev_keep, delete (skaffold) + herdr tab for this app
   k8s/                           the project's scripts: dev-setup.sh (pre-deploy hook shared by the apps), remove.sh, prod-init.sh (one-time prod setup, `deploy` skill)
   shared/                        only when several backends share TypeScript; the apps then build from the root
-  plugin/                        the product's Claude plugin: .mcp.json + skills (see new-app → blocks.md)
+  plugin/                        the product's plugin, for Claude Code (.claude-plugin/plugin.json, .mcp.json) and Agent Plugins 1.0 (plugin.json, mcp.json), shared skills/ (see new-app → blocks.md)
 ```
 
 **The root holds only `README.md`, `CLAUDE.md`, `meta.json`, `.gitignore`, `.github/`, `k8s/` (the project's dev scripts), `shared/` with a root `.dockerignore` when backends share code, and, when the product ships a Claude plugin, `plugin/` and `.claude-plugin/marketplace.json`.** Every app, including non-web ones (a Swift app, a CLI), lives in its own service folder. Nothing app-specific (`package.json`, `src/`, `test/`) stays at the root.
@@ -124,12 +124,12 @@ Replicate the reference; do not invent a new pattern when one exists. When a new
 |---|---|---|
 | **Kubernetes app, dev and prod** | The default for a new app | `/Volumes/Projects/portal` (`portal/` = ui, `tunnel/`): `k8s/<app>.yaml` + `<app>.dev.yaml`, `skaffold.yaml` per app with hot reload, no Compose. Details: `new-app` → kubernetes.md |
 | **Prod deploy to the cluster** | Every app on k3s | `/Volumes/Projects/portal/.github/workflows/` (`_deploy-k8s.yaml`, `deploy.yaml`); also `tags` (five apps) |
-| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/portal/portal/skaffold.yaml` (`sync: infer`), `/Volumes/Projects/tags/k8s/dev-setup.sh` (namespace, volume, dev-session Vault token) and `k8s/remove.sh` |
+| **Skaffold dev with hot reload** | Dev for every Kubernetes app | `/Volumes/Projects/portal/portal/skaffold.yaml` (`sync: infer`), `/Volumes/Projects/tags/k8s/dev-setup.sh` (namespace, volume; dev pods log in to Vault themselves at `auth/k8s-dev`) and `k8s/remove.sh` |
 | **Vault login by service account** | A pod that reads secrets | `/Volumes/Projects/tags/city/k8s/city.yaml` + `.env.schema`; `portal/tunnel` |
 | **Tunnel without Traefik** | Something must be public | `/Volumes/Projects/portal/tunnel`, `/Volumes/Projects/tags/tunnel` |
 | Cluster and node setup | Adding a node or a project to the cluster | `/Volumes/Projects/ghostmind/start/host/k3s/` and `host/scripts/server-bootstrap.sh` |
 | Remote MCP + Google OAuth (the product's auth server) | Most products | `/Volumes/Projects/format/mcp` (Google-proxy OAuth with enforced PKCE, allow-listed redirects, signed state: `app/src/auth/oauth.ts`) for the OAuth; `/Volumes/Projects/potion/mcp` (`app/src/main.ts`) for the transport: **stateless on the cluster**, MCP SDK v2, no sessions (`new-app` → blocks.md) |
-| **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`); smaller: `/Volumes/Projects/tags/plugin` |
+| **Claude plugin for the product** (MCP + skill) | Almost every product: how the user operates it through Claude | `/Volumes/Projects/potion/plugin` (`.mcp.json` → the remote MCP, `skills/potion`, `skills/potion-blocks`; `plugin.json` + `mcp.json` ship the same plugin for Agent Plugins 1.0); smaller: `/Volumes/Projects/tags/plugin` |
 | Web app, simple | Default: signs in through the MCP server's OAuth, so web, MCP and native share one auth system | `/Volumes/Projects/format/ui` (static React + TanStack, Vite) |
 | Web app, full-stack | Needs server rendering or its own API routes | `/Volumes/Projects/potion/ui` (Next.js + next-auth Google) |
 | Native app signing in to the product | Mac/iOS app with user accounts | `/Volumes/Projects/format/mac/app/Sources/Format/Account.swift` (RFC 8252 loopback + PKCE, tokens in the Keychain) |
@@ -212,6 +212,7 @@ Every port a project uses **on the Mac** must be unique across all projects, so 
 | together (playground) | api 3045 · db 5045 · ui 5046 · web 3060 |
 | block | demo 5105 · ui 5106 (the one dev host: it sends /mcp, /oauth and /api to the mcp) · db 5107 · mcp 3105 · Hasura console 9775 / api 9773 |
 | colors | ui 5125 (dev only) |
+| home (playground) | ui 5135 (tailnet only: home-ui-m1) |
 | billing | api 3095 · mcp 3096 (prod forward 3097) · db 5115 · Hasura console 9765 / api 9763 |
 | vault | 8200 |
 

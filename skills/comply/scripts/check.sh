@@ -137,13 +137,16 @@ for S in "${SERVICES[@]}"; do
     [ -n "$PRODM" ] && ! has 'image:\s*IMAGE\s*$' "$PRODM" && say FAIL k8s "$PRODM" "prod manifest must use 'image: IMAGE' (CI replaces it with the built digest)"
     if [ -n "$PRODM" ] && [ -f "$SCHEMA" ] && has 'vaultSecret\(' "$SCHEMA"; then
       has 'VAULT_JWT_ROLE' "$PRODM" || say FAIL k8s "$PRODM" "the app reads Vault but the Deployment sets no VAULT_JWT_ROLE (login by service account)"
-      has 'jwtAuthPath=k8s' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=k8s/oidcToken to @initHcpVault and the VAULT_JWT line (secrets skill)"
+      has 'jwtAuthPath=\$VAULT_JWT_PATH' "$SCHEMA" || say FAIL schema "$SCHEMA" "add jwtRole/jwtAuthPath=\$VAULT_JWT_PATH/oidcToken to @initHcpVault and the VAULT_JWT and VAULT_JWT_PATH=k8s lines (secrets skill)"
       has 'ts\.net' "$PRODM" && say WARN k8s "$PRODM" "prod VAULT_ADDR should be Vault's private address (http://10.0.0.7:8200)"
     fi
     [ -f "$D/entrypoint.sh" ] && has 'while true' "$D/entrypoint.sh" && \
       say WARN k8s "$D/entrypoint.sh" "prod restart loop: that is for a Compose host's single-use login. On the cluster exec the app and let Kubernetes restart the pod (new-app docker.md)"
     [ -n "$PRODM" ] && has 'VAULT_TOKEN|secretKeyRef' "$PRODM" && say FAIL k8s "$PRODM" "no token or secret handed to a prod pod: it logs in to Vault with its service account"
     if ls "$K"/*.dev.yaml >/dev/null 2>&1; then
+      for DM in "$K"/*.dev.yaml; do
+        has 'vault-dev|name: VAULT_TOKEN' "$DM" && say FAIL k8s "$DM" "a dev pod logs in to Vault itself: VAULT_JWT_PATH=k8s-dev, VAULT_JWT_ROLE=dev and the projected token, no vault-dev token (new-app kubernetes.md)"
+      done
       SK="$S/skaffold.yaml"
       if [ ! -f "$SK" ]; then say FAIL skaffold "$S" "dev manifest without skaffold.yaml"
       else
@@ -222,6 +225,34 @@ for S in "${SERVICES[@]}"; do
     say WARN plugin "$ROOT" "the product has an MCP but no plugin/ (.mcp.json + skill): products are AI-operable by default"
   fi
 done
+
+# ---------- the plugin ships for Claude Code and Agent Plugins 1.0 ----------
+# plugin/.claude-plugin/plugin.json + .mcp.json (Claude Code) and plugin/plugin.json + mcp.json (agent-plugins.org),
+# with the same version, and the same MCP urls and headers (http is written streamable-http). new-app blocks.md.
+P="$ROOT/plugin"
+if [ -f "$P/.claude-plugin/plugin.json" ]; then
+  [ -f "$P/plugin.json" ] || say WARN plugin "$P" "no plugin.json: the plugin ships for Agent Plugins 1.0 too (new-app blocks.md, The product's Claude plugin)"
+  [ -f "$P/.mcp.json" ] && [ ! -f "$P/mcp.json" ] && say WARN plugin "$P" "no mcp.json beside .mcp.json: Agent Plugins 1.0 clients get no MCP (type streamable-http)"
+  if [ -f "$P/plugin.json" ]; then
+    CV=$(jq -r '.version // ""' "$P/.claude-plugin/plugin.json" 2>/dev/null); AV=$(jq -r '.version // ""' "$P/plugin.json" 2>/dev/null)
+    [ "$CV" != "$AV" ] && say FAIL plugin "$P/plugin.json" "version \"$AV\" differs from .claude-plugin/plugin.json's \"$CV\" (toolkits:bump writes both)"
+    jq -e '."$schema" == "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"' "$P/plugin.json" >/dev/null 2>&1 || \
+      say WARN plugin "$P/plugin.json" "\$schema must be https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+    EXTRA=$(jq -r 'keys - ["$schema","name","version","description","author","homepage","repository","license","keywords","extensions"] | join(", ")' "$P/plugin.json" 2>/dev/null)
+    [ -n "$EXTRA" ] && say FAIL plugin "$P/plugin.json" "fields Agent Plugins 1.0 does not allow: $EXTRA"
+  fi
+  if [ -f "$P/.mcp.json" ] && [ -f "$P/mcp.json" ]; then
+    jq -e '."$schema" == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"' "$P/mcp.json" >/dev/null 2>&1 || \
+      say WARN plugin "$P/mcp.json" "\$schema must be https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
+    NORM='.mcpServers // {} | with_entries(.value |= {type: (if .type == "http" then "streamable-http" else .type end), url, headers})'
+    CM=$(jq -S "$NORM" "$P/.mcp.json" 2>/dev/null); AM=$(jq -S "$NORM" "$P/mcp.json" 2>/dev/null)
+    [ "$CM" != "$AM" ] && say FAIL plugin "$P/mcp.json" "servers, urls or headers differ from .mcp.json (http there is streamable-http here)"
+  fi
+  # a **/mcp.json ignore with only !plugin/.mcp.json silently leaves plugin/mcp.json out of git
+  if [ -f "$P/mcp.json" ] && git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1 && git -C "$ROOT" check-ignore -q plugin/mcp.json 2>/dev/null; then
+    say FAIL gitignore "$ROOT/.gitignore" "plugin/mcp.json is ignored by git: add !plugin/mcp.json"
+  fi
+fi
 
 # ---------- herdr: Claude is never a routine, the mobile tab ----------
 # run routine starts Claude without a terminal: it falls into --print mode and exits

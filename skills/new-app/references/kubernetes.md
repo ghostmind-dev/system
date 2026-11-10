@@ -80,9 +80,9 @@ The pod's service-account token (audience `vault`, 10 minutes, mounted by Kubern
 
 ## Dev manifest: `k8s/<app>.dev.yaml`
 
-Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault takes `VAULT_ADDR` and `VAULT_TOKEN` from the Secret `vault-dev` in the dev cluster (below). **A remote MCP is the exception: `replicas: 2` in dev too**, because it must be stateless and one pod would hide a request that needs the pod before it (blocks.md → A remote MCP on the cluster is stateless).
+Same Deployment and Service names, one replica, `image: <project>-<app>` (the local image Skaffold builds), `APP_ENV=dev`, no hardening. An app that reads Vault logs in the way it does in prod, with its service-account token, at the dev clusters' own method `auth/k8s-dev` (role `dev`): `VAULT_ADDR` (`http://vault.tail0e3587.ts.net:8200`), `VAULT_JWT_PATH=k8s-dev`, `VAULT_JWT_ROLE=dev`, and the projected token mounted at `/var/run/secrets/vault` (audience `vault`, as in prod). Nothing is stored in the cluster, so nothing expires: after a reboot of the dev machine, or days without Skaffold, every pod logs in again by itself. Reference: `/Volumes/Projects/relay/api/k8s/api.dev.yaml`. **A remote MCP is the exception: `replicas: 2` in dev too**, because it must be stateless and one pod would hide a request that needs the pod before it (blocks.md → A remote MCP on the cluster is stateless).
 
-**Shared things belong to no app.** The namespace, persistent volumes and the `vault-dev` Secret are created by a pre-deploy hook, not listed in one app's manifest, so stopping one app (Ctrl-C) never deletes what another uses.
+**Shared things belong to no app.** The namespace and persistent volumes are created by a pre-deploy hook, not listed in one app's manifest, so stopping one app (Ctrl-C) never deletes what another uses.
 
 ## `skaffold.yaml`: one per app
 
@@ -125,7 +125,7 @@ Runs before each Skaffold deploy, on the dev cluster Skaffold is deploying to (`
 
 1. creates the namespace (idempotent: `create --dry-run=client -o yaml | apply`);
 2. creates any persistent volume claim the app keeps across runs;
-3. **creates the `vault-dev` Secret from a 12-hour dev-session token**: `vault token create -policy=dev-session -ttl=12h`, reused while it has more than 1 hour left. That policy reads dev paths only, never `…/prod`. Never put the user's own token in the cluster.
+It never creates a Vault token: dev pods log in by themselves (above). The role `dev` of `auth/k8s-dev` gives every service account of a dev cluster the `dev-session` policy, which reads dev paths only, never `…/prod`; it is made by `/Volumes/Projects/cluster/vault/dev-auth.sh <context>`, run again when a dev cluster is rebuilt or added. Never put a token in the cluster.
 
 An app with no secrets and no volume only needs the namespace, as an inline hook (see `portal/portal/skaffold.yaml`).
 

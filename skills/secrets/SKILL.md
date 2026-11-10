@@ -43,7 +43,7 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 
 ```bash
 # @plugin(@varlock/hashicorp-vault-plugin@2.1.1)
-# @initHcpVault(url=$VAULT_ADDR, token=$VAULT_TOKEN, jwtRole=$VAULT_JWT_ROLE, jwtAuthPath=k8s, oidcToken=$VAULT_JWT, defaultPath=ghostmind/project/<project>/<app>)
+# @initHcpVault(url=$VAULT_ADDR, token=$VAULT_TOKEN, jwtRole=$VAULT_JWT_ROLE, jwtAuthPath=$VAULT_JWT_PATH, oidcToken=$VAULT_JWT, defaultPath=ghostmind/project/<project>/<app>)
 # @currentEnv=$APP_ENV
 # @defaultRequired=true
 # @defaultSensitive=false
@@ -52,8 +52,7 @@ The old `kv/` mount (`kv/<meta-id>/<env>/secrets`, one `CREDS` blob per env) is 
 APP_ENV=dev
 # @type=url
 VAULT_ADDR=
-# dev: a short-lived dev-session token (the Secret vault-dev in the dev cluster), or your shell's token
-# for host scripts. prod: empty, the login below is used instead.
+# host scripts: your shell's token. In a cluster (dev and prod): empty, the login below is used instead.
 # @type=vaultToken @sensitive @required=false
 VAULT_TOKEN=
 # prod in the cluster: the Deployment sets VAULT_JWT_ROLE, and the pod's service-account token (audience
@@ -62,6 +61,9 @@ VAULT_TOKEN=
 VAULT_JWT_ROLE=
 # @sensitive @internal @required=false
 VAULT_JWT=if($VAULT_JWT_ROLE, exec("cat /var/run/secrets/vault/token"))
+# the Vault login path for VAULT_JWT_ROLE: k8s in prod, k8s-dev in a dev cluster (set by the dev manifest)
+# @required=false
+VAULT_JWT_PATH=k8s
 
 # --- app config
 # @type=port
@@ -85,7 +87,7 @@ OPENROUTER_API_KEY=vaultSecret("ghostmind/global/openrouter")
 - **`if()` is lazy**: the branch for the other environment never runs, so the pod-only `exec("cat /var/run/secrets/vault/token")` and prod-only Vault paths are never touched in dev.
 - **Who logs in where:**
   - *prod pod:* its service-account token, through `auth/k8s`, role `<project>-<app>` (set up in `new-app` → kubernetes.md);
-  - *dev pod:* a 12-hour `dev-session` token that the project's `k8s/dev-setup.sh` puts in the Secret `vault-dev` of the dev cluster. That policy reads dev paths only, never `…/prod`. Never the user's own token;
+  - *dev pod:* the same way, its service-account token, through `auth/k8s-dev` (one method for every dev cluster), role `dev`, which gives the `dev-session` policy: dev paths only, never `…/prod`. The dev manifest sets `VAULT_JWT_PATH=k8s-dev` and `VAULT_JWT_ROLE=dev` (`new-app` → kubernetes.md). No token is stored in the cluster, so a dev pod comes back by itself after a reboot. Never the user's own token;
   - *host scripts on the Mac:* the shell's `VAULT_TOKEN`.
 - An app deployed to a Compose host instead of the cluster uses AppRole lines here (`deploy` → compose-host.md).
 - **Use `if(forEnv(prod), …)`, not `remap()`.** `remap($APP_ENV, dev=a, prod=b)` returns the literal environment name.
